@@ -1401,6 +1401,234 @@
         </form>
       </div>
     </div>
+    
+    <!-- Bulk Upload Students Page -->
+    <div id="page-bulk-students" class="page-view admin-only">
+      <div class="header">
+        <h1 class="page-title">Bulk Upload - Students</h1>
+      </div>
+      <div class="table-card">
+        <div class="form-group">
+          <label class="form-label">Paste CSV Data or Upload File</label>
+          <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">
+            Format: StudentID (optional), Name, Class, Section, Stream, RollNo, Status
+          </p>
+          <textarea id="bulkStudentData" class="form-input" rows="10" placeholder="StudentID,Name,Class,Section,Stream,RollNo,Status
+,John Doe,10,A,Science,1,Active
+,Jane Smith,10,A,Science,2,Active"></textarea>
+        </div>
+        <div class="form-group">
+          <label style="display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" id="updateExistingStudents">
+            Update existing students (based on Class + Section + RollNo)
+          </label>
+        </div>
+        <div style="display: flex; gap: 12px;">
+          <button class="btn btn-secondary" onclick="previewStudentUpload()">Preview Import</button>
+          <button class="btn btn-primary" onclick="executeStudentUpload()">Import Students</button>
+        </div>
+        <div id="studentUploadPreview" style="margin-top: 20px;"></div>
+        <div id="studentUploadResults" style="margin-top: 20px;"></div>
+      </div>
+    </div>
+    
+    <!-- Bulk Upload Teachers Page -->
+    <div id="page-bulk-teachers" class="page-view admin-only">
+      <div class="header">
+        <h1 class="page-title">Bulk Upload - Teachers</h1>
+      </div>
+      <div class="table-card">
+        <div class="form-group">
+          <label class="form-label">Paste CSV Data</label>
+          <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">
+            Format: TeacherID (optional), Name, Subject, Classes (comma), Sections (comma), Email, Phone, Password (auto if empty)
+          </p>
+          <textarea id="bulkTeacherData" class="form-input" rows="10" placeholder="TeacherID,Name,Subject,Classes,Sections,Email,Phone,Password
+,Mrs. Sharma,Mathematics,9;10;11;12,A;B;C;D,sharma@school.com,,
+,Mr. Kumar,Physics,11;12,A;B,kumar@school.com,,"></textarea>
+        </div>
+        <div class="form-group">
+          <label style="display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" id="updateExistingTeachers">
+            Update existing teachers (based on Email)
+          </label>
+        </div>
+        <div style="display: flex; gap: 12px;">
+          <button class="btn btn-secondary" onclick="previewTeacherUpload()">Preview Import</button>
+          <button class="btn btn-primary" onclick="executeTeacherUpload()">Import Teachers</button>
+        </div>
+        <div id="teacherUploadPreview" style="margin-top: 20px;"></div>
+        <div id="teacherUploadResults" style="margin-top: 20px;"></div>
+        <div id="teacherCredentials" style="margin-top: 20px;"></div>
+      </div>
+    </div>
+    
+    <!-- Bulk Upload Marks Page -->
+    <div id="page-bulk-marks" class="page-view admin-only">
+      <div class="header">
+        <h1 class="page-title">Bulk Upload - Marks</h1>
+      </div>
+      <div class="table-card">
+        <div class="form-group">
+          <label class="form-label">Paste CSV Data</label>
+          <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">
+            Format: StudentID, Subject, ExamID, Marks
+          </p>
+          <textarea id="bulkMarksData" class="form-input" rows="10" placeholder="StudentID,Subject,ExamID,Marks
+STU1234567890,Mathematics,EXM1234567890,85
+STU1234567891,Mathematics,EXM1234567890,78"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Column Mapping (auto-detected)</label>
+          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
+            <div>
+              <label style="font-size: 12px;">Student ID Column</label>
+              <select class="filter-select" id="mapStudentId" style="width: 100%;">
+                <option value="0">Column 1</option>
+                <option value="1">Column 2</option>
+                <option value="2">Column 3</option>
+                <option value="3">Column 4</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size: 12px;">Subject Column</label>
+              <select class="filter-select" id="mapSubject" style="width: 100%;">
+                <option value="1">Column 2</option>
+                <option value="0">Column 1</option>
+                <option value="2">Column 3</option>
+                <option value="3">Column 4</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size: 12px;">Exam ID Column</label>
+              <select class="filter-select" id="mapExamId" style="width: 100%;">
+                <option value="2">Column 3</option>
+                <option value="0">Column 1</option>
+                <option value="1">Column 2</option>
+                <option value="3">Column 4</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size: 12px;">Marks Column</label>
+              <select class="filter-select" id="mapMarks" style="width: 100%;">
+                <option value="3">Column 4</option>
+                <option value="0">Column 1</option>
+                <option value="1">Column 2</option>
+                <option value="2">Column 3</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div style="display: flex; gap: 12px;">
+          <button class="btn btn-secondary" onclick="previewMarksUpload()">Preview Import</button>
+          <button class="btn btn-primary" onclick="executeMarksUpload()">Import Marks</button>
+        </div>
+        <div id="marksUploadPreview" style="margin-top: 20px;"></div>
+        <div id="marksUploadResults" style="margin-top: 20px;"></div>
+      </div>
+    </div>
+    
+    <!-- Report Cards Page -->
+    <div id="page-report-cards" class="page-view admin-only">
+      <div class="header">
+        <h1 class="page-title">Report Card Generator</h1>
+      </div>
+      <div class="table-card">
+        <h3 style="margin-bottom: 16px;">Generate Report Cards</h3>
+        <div class="filters-bar" style="padding: 0; box-shadow: none;">
+          <div class="filter-group">
+            <span class="filter-label">Class *</span>
+            <select class="filter-select" id="reportClass">
+              <option value="">Select Class</option>
+              <option value="9">Class 9</option>
+              <option value="10">Class 10</option>
+              <option value="11">Class 11</option>
+              <option value="12">Class 12</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <span class="filter-label">Section</span>
+            <select class="filter-select" id="reportSection">
+              <option value="">All Sections</option>
+              <option value="A">A</option>
+              <option value="B">B</option>
+              <option value="C">C</option>
+              <option value="D">D</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <span class="filter-label">Exam</span>
+            <select class="filter-select" id="reportExam">
+              <option value="">All Exams</option>
+            </select>
+          </div>
+          <div class="filter-group" style="align-self: flex-end;">
+            <button class="btn btn-primary" onclick="generateClassReports()">Generate All PDFs</button>
+          </div>
+        </div>
+        
+        <h4 style="margin: 24px 0 12px;">Or Generate Individual Report Card</h4>
+        <div class="filters-bar" style="padding: 0; box-shadow: none;">
+          <div class="filter-group">
+            <span class="filter-label">Student</span>
+            <select class="filter-select" id="reportStudent" style="min-width: 200px;">
+              <option value="">Select Student</option>
+            </select>
+          </div>
+          <div class="filter-group" style="align-self: flex-end;">
+            <button class="btn btn-secondary" onclick="generateSingleReport()">Generate PDF</button>
+          </div>
+        </div>
+        
+        <div id="reportCardResults" style="margin-top: 20px;"></div>
+      </div>
+    </div>
+    
+    <!-- Promote Students Page -->
+    <div id="page-promote-students" class="page-view admin-only">
+      <div class="header">
+        <h1 class="page-title">Promote Students</h1>
+      </div>
+      <div class="table-card" style="max-width: 500px;">
+        <div style="background: #fef3c7; padding: 16px; border-radius: 8px; margin-bottom: 20px;">
+          <strong style="color: #b45309;">Warning:</strong>
+          <p style="color: #92400e; margin-top: 4px; font-size: 13px;">
+            This will promote all students to the next class. Class 12 students will be marked as Alumni.
+          </p>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Current Academic Year</label>
+          <input type="text" class="form-input" id="promoteFromYear" value="2024-2025" readonly>
+        </div>
+        <div class="form-group">
+          <label class="form-label">New Academic Year</label>
+          <input type="text" class="form-input" id="promoteToYear" placeholder="2025-2026">
+        </div>
+        <button class="btn btn-danger" onclick="promoteAllStudents()">Promote All Students</button>
+        <div id="promoteResults" style="margin-top: 20px;"></div>
+      </div>
+    </div>
+    
+    <!-- Archive Data Page -->
+    <div id="page-archive-data" class="page-view admin-only">
+      <div class="header">
+        <h1 class="page-title">Archive Year Data</h1>
+      </div>
+      <div class="table-card" style="max-width: 500px;">
+        <div style="background: #dbeafe; padding: 16px; border-radius: 8px; margin-bottom: 20px;">
+          <strong style="color: #1d4ed8;">Info:</strong>
+          <p style="color: #1e40af; margin-top: 4px; font-size: 13px;">
+            This will create backup copies of Students, Marks, and Exams sheets with the academic year suffix.
+          </p>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Academic Year to Archive</label>
+          <input type="text" class="form-input" id="archiveYear" value="2024-2025">
+        </div>
+        <button class="btn btn-primary" onclick="archiveYearDataUI()">Archive Data</button>
+        <div id="archiveResults" style="margin-top: 20px;"></div>
+      </div>
+    </div>
   </main>
   
   <!-- Modals -->
