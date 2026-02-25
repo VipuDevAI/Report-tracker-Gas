@@ -136,6 +136,7 @@ function deleteStudent(studentId) {
 
 /**
  * Get all students with optional filters
+ * Applies teacher filtering for non-admin users
  * @param {Object} filters - Optional filters (class, section, stream, status)
  * @returns {Array} Filtered students
  */
@@ -175,6 +176,9 @@ function getStudents(filters) {
       students = students.filter(s => s.status === "Active");
     }
   }
+  
+  // Apply teacher assignment filter (server-side)
+  students = applyTeacherFilter(students, { filterBySubject: false });
   
   return students;
 }
