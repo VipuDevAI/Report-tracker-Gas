@@ -1515,9 +1515,38 @@
         .withSuccessHandler(function(info) {
           document.getElementById('userName').textContent = info.name || info.email;
           document.getElementById('userAvatar').textContent = (info.name || info.email).charAt(0).toUpperCase();
+          
+          // Apply role-based UI restrictions
+          applyRoleRestrictions(info);
         })
         .withFailureHandler(console.error)
         .getCurrentUserInfo();
+    }
+    
+    function applyRoleRestrictions(userInfo) {
+      const isAdmin = userInfo.role === 'admin';
+      
+      // Hide admin-only menu items for teachers
+      const adminOnlyItems = [
+        'students', 'teachers', 'subjects', 'create-exam', 'lock-exam', 
+        'grade-ranges', 'school-info'
+      ];
+      
+      if (!isAdmin) {
+        adminOnlyItems.forEach(page => {
+          const navItem = document.querySelector(`[data-page="${page}"]`);
+          if (navItem) {
+            navItem.style.display = 'none';
+          }
+        });
+        
+        // Update header to show role
+        document.getElementById('userName').textContent = 
+          `${userInfo.name} (Teacher)`;
+      } else {
+        document.getElementById('userName').textContent = 
+          `${userInfo.name} (Admin)`;
+      }
     }
     
     function loadKPIs() {
