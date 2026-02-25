@@ -2,9 +2,31 @@
  MVM REPORT TRACKER - AUTHENTICATION & ACCESS
  File 3 of 7
  Google Email-Based Authentication
+ 
+ ⚠️ IMPORTANT: OWNERSHIP vs APP ACCESS
+ ────────────────────────────────────────────────
+ SCRIPT OWNER (can edit code):
+   → rishisans83@gmail.com ONLY
+   
+ APP ADMINS (can use admin features, NOT see code):
+   → rishisans83@gmail.com
+   → mvmseniors26@gmail.com
+   → Other school admins added below
+   
+ TEACHERS (filtered access via web app):
+   → Added in Teachers sheet with their Google email
+   
+ 🔒 DEPLOYMENT SETTINGS:
+   1. Deploy → New deployment → Web app
+   2. Execute as: "Me" (rishisans83@gmail.com)
+   3. Who has access: "Anyone with Google account"
+   4. Share ONLY the web app URL with school staff
+   5. NEVER share script editor access
 ************************************************/
 
-// Admin email whitelist
+// APP ADMIN emails (can use admin features in the app)
+// These users can manage students, teachers, exams, etc.
+// They CANNOT see or edit the code (unless given editor access separately)
 const ADMIN_EMAIL_LIST = [
   "rishisans83@gmail.com",
   "mvmseniors26@gmail.com"
