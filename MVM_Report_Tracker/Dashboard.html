@@ -1795,10 +1795,20 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
       // Hide admin-only menu items for teachers
       const adminOnlyItems = [
         'students', 'teachers', 'subjects', 'create-exam', 'lock-exam', 
-        'grade-ranges', 'school-info'
+        'grade-ranges', 'school-info', 'bulk-students', 'bulk-teachers', 
+        'bulk-marks', 'report-cards', 'promote-students', 'archive-data'
       ];
       
+      // Hide admin-only sections
+      document.querySelectorAll('.admin-only-section').forEach(section => {
+        section.style.display = isAdmin ? 'block' : 'none';
+      });
+      
+      // Hide report cards for teachers
       if (!isAdmin) {
+        const reportCardsNav = document.querySelector('[data-page="report-cards"]');
+        if (reportCardsNav) reportCardsNav.style.display = 'none';
+        
         adminOnlyItems.forEach(page => {
           const navItem = document.querySelector(`[data-page="${page}"]`);
           if (navItem) {
@@ -1813,6 +1823,9 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
         document.getElementById('userName').textContent = 
           `${userInfo.name} (Admin)`;
       }
+      
+      // Store role globally
+      window.currentUserRole = userInfo.role;
     }
     
     function loadKPIs() {
