@@ -308,61 +308,7 @@ function bulkUploadTeachers(data, options) {
 }
 
 
-/**
- * Generate random password
- * @param {number} length - Password length
- * @returns {string} Generated password
- */
-function generatePassword(length) {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
-  let password = "";
-  for (let i = 0; i < length; i++) {
-    password += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return password;
-}
-
-
-/**
- * Hash password using SHA-256
- * @param {string} password - Plain password
- * @returns {string} Hashed password
- */
-function hashPassword(password) {
-  const hash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, password);
-  return hash.map(b => ('0' + (b & 0xFF).toString(16)).slice(-2)).join('');
-}
-
-
-/**
- * Verify password
- * @param {string} password - Plain password
- * @param {string} hash - Stored hash
- * @returns {boolean} True if match
- */
-function verifyPassword(password, hash) {
-  return hashPassword(password) === hash;
-}
-
-
-/**
- * Generate downloadable credentials CSV
- * @param {Array} credentials - Array of credential objects
- * @returns {string} CSV content
- */
-function generateCredentialsCSV(credentials) {
-  const headers = ["Teacher ID", "Name", "Email", "Password", "Status"];
-  const rows = credentials.map(c => [
-    c.teacherId,
-    c.name,
-    c.email,
-    c.password,
-    c.status
-  ]);
-  
-  return [headers, ...rows].map(row => row.join(",")).join("\n");
-}
-
+// Password functions removed - using Google email-based authentication
 
 /**
  * Upload/Replace students data (Legacy - kept for compatibility)
