@@ -1,7 +1,7 @@
 /************************************************
  MVM REPORT TRACKER - AUTHENTICATION & ACCESS
  File 3 of 7
- Role-Based Access Control Implementation
+ Google Email-Based Authentication
 ************************************************/
 
 // Admin email whitelist
@@ -29,25 +29,47 @@ function getEffectiveUser() {
 
 
 /**
- * Get current user's role
- * @returns {string} "admin" or "teacher"
+ * Check if user is registered (admin or teacher)
+ * @returns {Object} { registered: boolean, role: string, message: string }
  */
-function getCurrentUserRole() {
+function checkUserAccess() {
   const email = getCurrentUser();
+  
+  if (!email) {
+    return { 
+      registered: false, 
+      role: null, 
+      message: "Unable to identify user. Please ensure you are logged into Google." 
+    };
+  }
   
   // Check if admin
   if (ADMIN_EMAIL_LIST.includes(email)) {
-    return "admin";
+    return { registered: true, role: "admin", message: "Welcome, Admin!" };
   }
   
   // Check if teacher exists in Teachers sheet
   const teacher = getTeacherByEmail(email);
   if (teacher) {
-    return "teacher";
+    return { registered: true, role: "teacher", message: `Welcome, ${teacher.name}!` };
   }
   
-  // Default to admin for unregistered users (school staff)
-  return "admin";
+  // Not registered
+  return { 
+    registered: false, 
+    role: null, 
+    message: `Access Denied. Your email (${email}) is not registered in the system. Please contact the administrator.` 
+  };
+}
+
+
+/**
+ * Get current user's role
+ * @returns {string} "admin", "teacher", or "unauthorized"
+ */
+function getCurrentUserRole() {
+  const access = checkUserAccess();
+  return access.registered ? access.role : "unauthorized";
 }
 
 
@@ -56,7 +78,8 @@ function getCurrentUserRole() {
  * @returns {boolean} True if admin
  */
 function isAdmin() {
-  return getCurrentUserRole() === "admin";
+  const email = getCurrentUser();
+  return ADMIN_EMAIL_LIST.includes(email);
 }
 
 
@@ -65,7 +88,18 @@ function isAdmin() {
  * @returns {boolean} True if teacher
  */
 function isTeacher() {
-  return getCurrentUserRole() === "teacher";
+  const email = getCurrentUser();
+  const teacher = getTeacherByEmail(email);
+  return teacher !== null;
+}
+
+
+/**
+ * Check if user has any valid access
+ * @returns {boolean} True if admin or teacher
+ */
+function hasAccess() {
+  return isAdmin() || isTeacher();
 }
 
 
@@ -128,7 +162,6 @@ function getTeacherAssignment(email) {
 
 /**
  * Apply teacher filter to data array
- * Filters students/marks based on teacher's assigned classes, sections, and subject
  * @param {Array} data - Array of objects to filter
  * @param {Object} options - Filter options { filterBySubject: boolean, subjectField: string }
  * @returns {Array} Filtered data
@@ -185,9 +218,20 @@ function applyTeacherFilter(data, options) {
  */
 function getCurrentUserInfo() {
   const email = getCurrentUser();
-  const role = getCurrentUserRole();
+  const access = checkUserAccess();
   
-  if (role === "admin") {
+  if (!access.registered) {
+    return {
+      type: "unauthorized",
+      role: "unauthorized",
+      email: email,
+      name: email ? email.split("@")[0] : "Unknown",
+      message: access.message,
+      hasAccess: false
+    };
+  }
+  
+  if (access.role === "admin") {
     return {
       type: "admin",
       role: "admin",
@@ -196,7 +240,8 @@ function getCurrentUserInfo() {
       permissions: ["all"],
       canManageMasterData: true,
       canLockExams: true,
-      canViewAllData: true
+      canViewAllData: true,
+      hasAccess: true
     };
   }
   
@@ -214,19 +259,18 @@ function getCurrentUserInfo() {
       permissions: ["view_own_data", "enter_marks", "view_students"],
       canManageMasterData: false,
       canLockExams: false,
-      canViewAllData: false
+      canViewAllData: false,
+      hasAccess: true
     };
   }
   
   return {
-    type: "viewer",
-    role: "viewer",
+    type: "unauthorized",
+    role: "unauthorized",
     email: email,
-    name: email.split("@")[0],
-    permissions: ["view_only"],
-    canManageMasterData: false,
-    canLockExams: false,
-    canViewAllData: false
+    name: email ? email.split("@")[0] : "Unknown",
+    message: "Access Denied",
+    hasAccess: false
   };
 }
 
@@ -239,9 +283,10 @@ function getCurrentUserInfo() {
 function hasPermission(permission) {
   const userInfo = getCurrentUserInfo();
   
+  if (!userInfo.hasAccess) return false;
   if (userInfo.role === "admin") return true;
   
-  return userInfo.permissions.includes(permission);
+  return userInfo.permissions && userInfo.permissions.includes(permission);
 }
 
 
@@ -297,11 +342,22 @@ function canAccessStudent(student) {
  */
 function getAccessControl() {
   const userInfo = getCurrentUserInfo();
+  
+  if (!userInfo.hasAccess) {
+    return {
+      user: userInfo,
+      role: "unauthorized",
+      hasAccess: false,
+      message: userInfo.message
+    };
+  }
+  
   const isUserAdmin = userInfo.role === "admin";
   
   return {
     user: userInfo,
     role: userInfo.role,
+    hasAccess: true,
     // Master Data
     canUploadStudents: isUserAdmin,
     canUploadTeachers: isUserAdmin,
@@ -319,6 +375,7 @@ function getAccessControl() {
     canViewAnalytics: true,
     canViewReports: true,
     canExportData: true,
+    canGenerateReportCards: isUserAdmin,
     // Settings
     canModifyGradeRanges: isUserAdmin,
     canModifySchoolSettings: isUserAdmin,
@@ -327,6 +384,19 @@ function getAccessControl() {
     viewAllData: isUserAdmin,
     filteredByAssignment: !isUserAdmin
   };
+}
+
+
+/**
+ * Require valid access - throws error if not registered
+ * @param {string} action - Action being attempted
+ */
+function requireAccess(action) {
+  const access = checkUserAccess();
+  if (!access.registered) {
+    logAction("Access Denied", `${getCurrentUser()} attempted: ${action}`);
+    throw new Error(access.message);
+  }
 }
 
 
