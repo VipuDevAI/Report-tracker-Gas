@@ -1689,14 +1689,17 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
         <h3 class="modal-title">Add Teacher</h3>
         <button class="modal-close" onclick="closeModal('addTeacherModal')">&times;</button>
       </div>
+      <div style="background: #dbeafe; padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size: 13px;">
+        Teachers login using their Google account. Enter their Google email address.
+      </div>
       <form id="addTeacherForm" onsubmit="handleAddTeacher(event)">
         <div class="form-group">
           <label class="form-label">Name *</label>
           <input type="text" class="form-input" id="newTeacherName" required>
         </div>
         <div class="form-group">
-          <label class="form-label">Email *</label>
-          <input type="email" class="form-input" id="newTeacherEmail" required>
+          <label class="form-label">Google Email *</label>
+          <input type="email" class="form-input" id="newTeacherEmail" required placeholder="teacher@gmail.com">
         </div>
         <div class="form-group">
           <label class="form-label">Subject</label>
