@@ -1565,6 +1565,14 @@
             document.getElementById('kpiTopTeacherScore').textContent = data.topTeacher.avgScore + '% Avg Score';
           }
           document.getElementById('kpiAbove80').textContent = data.rangeAbove80 + '%';
+          
+          // Show data scope indicator
+          if (data.dataScope && data.userRole === 'teacher') {
+            const scopeDiv = document.createElement('div');
+            scopeDiv.className = 'data-scope-indicator';
+            scopeDiv.innerHTML = `<small style="color: var(--text-secondary);">Showing: ${data.dataScope} | Year: ${data.academicYear}</small>`;
+            document.querySelector('.kpi-grid').insertAdjacentElement('beforebegin', scopeDiv);
+          }
         })
         .withFailureHandler(console.error)
         .getDashboardKPIs();
