@@ -160,10 +160,10 @@ function bulkUploadStudents(data, options) {
 
 
 /**
- * Bulk upload teachers with password generation
+ * Bulk upload teachers (Google email-based auth)
  * @param {Array} data - 2D array of teacher data
  * @param {Object} options - { updateExisting: boolean, preview: boolean }
- * @returns {Object} Result object with credentials
+ * @returns {Object} Result object
  */
 function bulkUploadTeachers(data, options) {
   if (!isAdmin()) {
@@ -192,8 +192,7 @@ function bulkUploadTeachers(data, options) {
     created: 0,
     updated: 0,
     failed: 0,
-    errors: [],
-    credentials: []  // Store generated credentials for download
+    errors: []
   };
   
   const toCreate = [];
@@ -212,8 +211,7 @@ function bulkUploadTeachers(data, options) {
     const sections = row[4] || "";
     const email = row[5] || "";
     const phone = row[6] || "";
-    const password = row[7] || generatePassword(8);
-    const status = row[8] || "Active";
+    const status = row[7] || "Active";
     
     // Validation
     if (!name) {
@@ -222,8 +220,18 @@ function bulkUploadTeachers(data, options) {
       return;
     }
     
-    // Hash password
-    const hashedPassword = hashPassword(password);
+    if (!email) {
+      results.failed++;
+      results.errors.push({ row: rowIdx + 1, error: "Email is required (used for Google login)" });
+      return;
+    }
+    
+    // Validate email format
+    if (!email.includes("@")) {
+      results.failed++;
+      results.errors.push({ row: rowIdx + 1, error: "Invalid email format" });
+      return;
+    }
     
     const teacherData = [
       teacherId,
@@ -234,11 +242,10 @@ function bulkUploadTeachers(data, options) {
       email,
       phone,
       new Date(),
-      status,
-      hashedPassword  // Store hashed password
+      status
     ];
     
-    const existingByEmail = email ? existingIndex[email.toLowerCase()] : null;
+    const existingByEmail = existingIndex[email.toLowerCase()];
     
     if (existingByEmail) {
       if (updateExisting) {
@@ -248,27 +255,14 @@ function bulkUploadTeachers(data, options) {
           original: existingByEmail.row
         });
         results.updated++;
-        results.credentials.push({
-          teacherId: teacherId,
-          name: name,
-          email: email,
-          password: password,  // Plain password for credential sheet
-          status: "UPDATED"
-        });
       } else {
         results.failed++;
         results.errors.push({ row: rowIdx + 1, error: `Email ${email} already exists` });
+        return;
       }
     } else {
       toCreate.push(teacherData);
       results.created++;
-      results.credentials.push({
-        teacherId: teacherId,
-        name: name,
-        email: email,
-        password: password,  // Plain password for credential sheet
-        status: "NEW"
-      });
     }
     
     results.preview.push({
@@ -295,12 +289,12 @@ function bulkUploadTeachers(data, options) {
   // Write new teachers
   if (toCreate.length > 0) {
     const lastRow = sheet.getLastRow();
-    sheet.getRange(lastRow + 1, 1, toCreate.length, 10).setValues(toCreate);
+    sheet.getRange(lastRow + 1, 1, toCreate.length, 9).setValues(toCreate);
   }
   
   // Update existing teachers
   toUpdate.forEach(item => {
-    sheet.getRange(item.rowIndex, 1, 1, 10).setValues([item.data]);
+    sheet.getRange(item.rowIndex, 1, 1, 9).setValues([item.data]);
   });
   
   logAction("Bulk Upload Teachers", `Created: ${results.created}, Updated: ${results.updated}, Failed: ${results.failed}`);
@@ -309,7 +303,6 @@ function bulkUploadTeachers(data, options) {
     success: true,
     preview: false,
     results: results,
-    credentials: results.credentials,  // Return credentials for download
     message: `Import complete: ${results.created} created, ${results.updated} updated, ${results.failed} failed`
   };
 }
