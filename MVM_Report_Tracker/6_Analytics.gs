@@ -1,6 +1,7 @@
 /************************************************
  MVM REPORT TRACKER - ANALYTICS & AGGREGATES
  File 6 of 7
+ With Academic Year Filtering & Role-Based Access
 ************************************************/
 
 /**
@@ -11,6 +12,7 @@ function rebuildAggregates() {
   const ss = SpreadsheetApp.getActive();
   const marksSheet = ss.getSheetByName("Marks_Master");
   const aggSheet = ss.getSheetByName("Aggregates");
+  const currentYear = getCurrentAcademicYear();
   
   // Clear existing aggregates
   if (aggSheet.getLastRow() > 1) {
@@ -22,7 +24,16 @@ function rebuildAggregates() {
     return { success: true, message: "No marks data to analyze." };
   }
   
-  const marks = marksData.slice(1);
+  // Filter by current academic year
+  const marks = marksData.slice(1).filter(row => {
+    const rowYear = row[17] || currentYear;
+    return rowYear === currentYear;
+  });
+  
+  if (marks.length === 0) {
+    return { success: true, message: "No marks data for current academic year." };
+  }
+  
   const aggregates = [];
   const now = new Date();
   
@@ -133,19 +144,20 @@ function rebuildAggregates() {
     aggSheet.getRange(2, 1, aggregates.length, 6).setValues(aggregates);
   }
   
-  logAction("Rebuild Analytics", `Generated ${aggregates.length} aggregate entries`);
+  logAction("Rebuild Analytics", `Generated ${aggregates.length} aggregate entries for ${currentYear}`);
   
-  return { success: true, message: `Analytics rebuilt. ${aggregates.length} entries generated.` };
+  return { success: true, message: `Analytics rebuilt. ${aggregates.length} entries generated for ${currentYear}.` };
 }
 
 
 /**
  * Get weak students (below threshold)
+ * Applies teacher filtering for non-admin users
  * @param {Object} filters - Optional filters (class, section, subject)
  * @returns {Array} Weak students list
  */
 function getWeakStudents(filters) {
-  const marks = getMarks(filters);
+  const marks = getMarks(filters); // Already filtered by teacher assignment
   const threshold = 40;
   
   const weakStudents = marks.filter(m => m.percentage < threshold);
@@ -181,12 +193,13 @@ function getWeakStudents(filters) {
 
 /**
  * Get toppers
+ * Applies teacher filtering for non-admin users
  * @param {Object} filters - Optional filters
  * @param {number} limit - Number of toppers to return
  * @returns {Array} Toppers list
  */
 function getToppers(filters, limit) {
-  const marks = getMarks(filters);
+  const marks = getMarks(filters); // Already filtered by teacher assignment
   
   // Group by student and calculate overall percentage
   const studentMap = {};
@@ -220,11 +233,12 @@ function getToppers(filters, limit) {
 
 /**
  * Get subject performance analytics
+ * Applies teacher filtering for non-admin users
  * @param {Object} filters - Optional filters
  * @returns {Array} Subject performance data
  */
 function getSubjectPerformance(filters) {
-  const marks = getMarks(filters);
+  const marks = getMarks(filters); // Already filtered by teacher assignment
   
   const subjectMap = {};
   marks.forEach(m => {
@@ -260,11 +274,12 @@ function getSubjectPerformance(filters) {
 
 /**
  * Get class performance analytics
+ * Applies teacher filtering for non-admin users
  * @param {Object} filters - Optional filters
  * @returns {Array} Class performance data
  */
 function getClassPerformance(filters) {
-  const marks = getMarks(filters);
+  const marks = getMarks(filters); // Already filtered by teacher assignment
   
   const classMap = {};
   marks.forEach(m => {
@@ -301,10 +316,11 @@ function getClassPerformance(filters) {
 
 /**
  * Get teacher performance analytics
+ * Admin sees all, Teacher sees only their own
  * @returns {Array} Teacher performance data
  */
 function getTeacherPerformance() {
-  const marks = getMarks();
+  const marks = getMarks(); // Already filtered by teacher assignment
   
   const teacherMap = {};
   marks.forEach(m => {
@@ -340,11 +356,12 @@ function getTeacherPerformance() {
 
 /**
  * Get range distribution
+ * Applies teacher filtering for non-admin users
  * @param {Object} filters - Optional filters
  * @returns {Object} Range distribution data
  */
 function getRangeDistribution(filters) {
-  const marks = getMarks(filters);
+  const marks = getMarks(filters); // Already filtered by teacher assignment
   
   const distribution = {
     "91-100": { count: 0, label: "A+ (91-100%)", color: "#22c55e" },
@@ -383,6 +400,7 @@ function getRangeDistribution(filters) {
 
 /**
  * Get dashboard KPIs
+ * Filtered by user role and academic year
  * @returns {Object} Dashboard KPI data
  */
 function getDashboardKPIs() {
@@ -390,6 +408,8 @@ function getDashboardKPIs() {
   const classPerf = getClassPerformance();
   const teacherPerf = getTeacherPerformance();
   const rangeData = getRangeDistribution();
+  const currentYear = getCurrentAcademicYear();
+  const userRole = getCurrentUserRole();
   
   // Find lowest performing subject
   const lowestSubject = subjectPerf.length > 0 
@@ -421,6 +441,40 @@ function getDashboardKPIs() {
       avgScore: topTeacher.avgPercentage
     } : null,
     rangeAbove80: above80,
-    totalEntries: rangeData.total
+    totalEntries: rangeData.total,
+    academicYear: currentYear,
+    userRole: userRole,
+    dataScope: userRole === "admin" ? "All Data" : "Your Assigned Data"
+  };
+}
+
+
+/**
+ * Get analytics summary for teacher's own classes
+ * @returns {Object} Teacher-specific analytics
+ */
+function getMyAnalytics() {
+  if (isAdmin()) {
+    return {
+      message: "Admin view - showing all data",
+      subjectPerformance: getSubjectPerformance(),
+      classPerformance: getClassPerformance(),
+      weakStudents: getWeakStudents(),
+      toppers: getToppers(null, 10)
+    };
+  }
+  
+  const assignment = getTeacherAssignment();
+  if (!assignment) {
+    return { message: "No assignment found", data: null };
+  }
+  
+  return {
+    message: `Showing data for ${assignment.subject} - Classes: ${assignment.classes.join(", ")}`,
+    teacher: assignment,
+    subjectPerformance: getSubjectPerformance(),
+    classPerformance: getClassPerformance(),
+    weakStudents: getWeakStudents(),
+    toppers: getToppers(null, 10)
   };
 }
