@@ -1,6 +1,7 @@
 /************************************************
  MVM REPORT TRACKER - MARKS ENTRY & MANAGEMENT
  File 5 of 7
+ With Role-Based Access & Academic Year Support
 ************************************************/
 
 /**
@@ -39,17 +40,44 @@ function addMarks(marksData) {
     return { success: false, message: `Marks must be between 0 and ${exam.maxMarks}.` };
   }
   
-  // Get student details
+  // Get student details (this already applies teacher filter)
   const students = getStudents({ status: "Active" });
   const student = students.find(s => s.studentId === marksData.studentId);
+  
   if (!student) {
-    return { success: false, message: "Student not found." };
+    return { success: false, message: "Student not found or you don't have access to this student." };
+  }
+  
+  // Teacher-specific validation: Check if teacher can enter marks for this subject
+  if (!isAdmin()) {
+    const assignment = getTeacherAssignment();
+    if (!assignment) {
+      return { success: false, message: "Teacher assignment not found." };
+    }
+    
+    // Check subject permission
+    if (assignment.subject !== "All" && assignment.subject !== marksData.subject) {
+      return { success: false, message: `You can only enter marks for ${assignment.subject}.` };
+    }
+    
+    // Check class permission
+    if (!assignment.hasAllClasses && !assignment.classes.includes(String(student.class))) {
+      return { success: false, message: "You don't have permission for this class." };
+    }
+    
+    // Check section permission
+    if (!assignment.hasAllSections && !assignment.sections.includes(student.section)) {
+      return { success: false, message: "You don't have permission for this section." };
+    }
   }
   
   // Get teacher details
   const teacher = getTeacherByEmail(getCurrentUser());
   const teacherId = teacher ? teacher.teacherId : "ADMIN";
   const teacherName = teacher ? teacher.name : "Administrator";
+  
+  // Get current academic year
+  const academicYear = getCurrentAcademicYear();
   
   // Check for existing entry
   const sheet = SpreadsheetApp.getActive().getSheetByName("Marks_Master");
@@ -82,12 +110,13 @@ function addMarks(marksData) {
     percentage.toFixed(2),
     grade,
     new Date(),
-    getCurrentUser()
+    getCurrentUser(),
+    academicYear  // Academic year field
   ];
   
   if (existingIndex > 0) {
     // Update existing entry
-    sheet.getRange(existingIndex + 1, 1, 1, 17).setValues([entryData]);
+    sheet.getRange(existingIndex + 1, 1, 1, 18).setValues([entryData]);
     logAction("Update Marks", `Updated marks for ${student.name} in ${marksData.subject}`);
     return { success: true, message: "Marks updated successfully!" };
   } else {
@@ -141,6 +170,7 @@ function bulkAddMarks(marksArray) {
 
 /**
  * Get marks with filters
+ * Applies teacher filtering for non-admin users
  * @param {Object} filters - Optional filters
  * @returns {Array} Filtered marks
  */
@@ -149,6 +179,9 @@ function getMarks(filters) {
   const data = sheet.getDataRange().getValues();
   
   if (data.length <= 1) return [];
+  
+  // Get current academic year for default filtering
+  const currentYear = getCurrentAcademicYear();
   
   let marks = data.slice(1).map(row => ({
     entryId: row[0],
@@ -167,9 +200,11 @@ function getMarks(filters) {
     percentage: parseFloat(row[13]),
     grade: row[14],
     updatedAt: row[15],
-    updatedBy: row[16]
+    updatedBy: row[16],
+    academicYear: row[17] || currentYear
   }));
   
+  // Apply standard filters
   if (filters) {
     if (filters.studentId) {
       marks = marks.filter(m => m.studentId === filters.studentId);
@@ -189,7 +224,19 @@ function getMarks(filters) {
     if (filters.teacherId) {
       marks = marks.filter(m => m.teacherId === filters.teacherId);
     }
+    if (filters.academicYear) {
+      marks = marks.filter(m => m.academicYear === filters.academicYear);
+    } else {
+      // Default: filter by current academic year
+      marks = marks.filter(m => m.academicYear === currentYear);
+    }
+  } else {
+    // Default: filter by current academic year
+    marks = marks.filter(m => m.academicYear === currentYear);
   }
+  
+  // Apply teacher assignment filter (server-side)
+  marks = applyTeacherFilter(marks, { filterBySubject: true, subjectField: "subject" });
   
   return marks;
 }
@@ -295,7 +342,7 @@ function getGradeColor(grade) {
 
 
 /**
- * Delete marks entry
+ * Delete marks entry (Admin only)
  * @param {string} entryId - Entry ID to delete
  * @returns {Object} Result object
  */
@@ -361,15 +408,16 @@ function createWeakStudentAlert(student, subject, percentage, examName) {
 function getRecentMarks(limit) {
   const sheet = SpreadsheetApp.getActive().getSheetByName("Marks_Master");
   const lastRow = sheet.getLastRow();
+  const currentYear = getCurrentAcademicYear();
   
   if (lastRow <= 1) return [];
   
   const numRows = Math.min(limit || 20, lastRow - 1);
   const startRow = Math.max(2, lastRow - numRows + 1);
   
-  const data = sheet.getRange(startRow, 1, numRows, 17).getValues();
+  const data = sheet.getRange(startRow, 1, numRows, 18).getValues();
   
-  return data.map(row => ({
+  let results = data.map(row => ({
     entryId: row[0],
     studentId: row[1],
     studentName: row[2],
@@ -382,6 +430,30 @@ function getRecentMarks(limit) {
     percentage: parseFloat(row[13]),
     grade: row[14],
     updatedAt: row[15],
-    teacherName: row[6]
-  })).reverse();
+    teacherName: row[6],
+    academicYear: row[17] || currentYear
+  })).filter(m => m.academicYear === currentYear);
+  
+  // Apply teacher filter
+  results = applyTeacherFilter(results, { filterBySubject: true, subjectField: "subject" });
+  
+  return results.reverse();
+}
+
+
+/**
+ * Get marks for teacher's own entries
+ * @returns {Array} Teacher's marks entries
+ */
+function getMyMarks() {
+  if (isAdmin()) {
+    return getMarks();
+  }
+  
+  const assignment = getTeacherAssignment();
+  if (!assignment) {
+    return [];
+  }
+  
+  return getMarks({ teacherId: assignment.teacherId });
 }
