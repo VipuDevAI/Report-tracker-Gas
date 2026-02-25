@@ -442,18 +442,234 @@ function getRecentMarks(limit) {
 
 
 /**
- * Get marks for teacher's own entries
- * @returns {Array} Teacher's marks entries
+ * Admin bulk upload marks from CSV
+ * @param {Array} data - 2D array of marks data
+ * @param {Object} columnMapping - Column index mapping { studentId, subject, examId, marks }
+ * @param {Object} options - { preview: boolean }
+ * @returns {Object} Result object
  */
-function getMyMarks() {
-  if (isAdmin()) {
-    return getMarks();
+function adminBulkUploadMarks(data, columnMapping, options) {
+  if (!isAdmin()) {
+    return { success: false, message: "Access denied. Admin privileges required." };
   }
   
-  const assignment = getTeacherAssignment();
-  if (!assignment) {
-    return [];
+  if (!data || !Array.isArray(data) || data.length === 0) {
+    return { success: false, message: "No data provided." };
   }
   
-  return getMarks({ teacherId: assignment.teacherId });
+  const opts = options || {};
+  const previewOnly = opts.preview || false;
+  
+  // Default column mapping
+  const mapping = columnMapping || {
+    studentId: 0,
+    subject: 1,
+    examId: 2,
+    marks: 3
+  };
+  
+  // Get existing data for validation
+  const studentsSheet = SpreadsheetApp.getActive().getSheetByName("Students");
+  const studentsData = studentsSheet.getDataRange().getValues();
+  const studentIndex = {};
+  studentsData.slice(1).forEach(row => {
+    studentIndex[row[0]] = { name: row[1], class: row[2], section: row[3] };
+  });
+  
+  // Get exams for validation
+  const examsSheet = SpreadsheetApp.getActive().getSheetByName("Exams");
+  const examsData = examsSheet.getDataRange().getValues();
+  const examIndex = {};
+  examsData.slice(1).forEach(row => {
+    examIndex[row[0]] = { name: row[1], maxMarks: row[4], locked: row[8] };
+  });
+  
+  const results = {
+    preview: [],
+    created: 0,
+    updated: 0,
+    failed: 0,
+    errors: [],
+    lockedExams: []
+  };
+  
+  const validMarks = [];
+  
+  data.forEach((row, rowIdx) => {
+    // Skip header row
+    if (rowIdx === 0) {
+      const firstCell = String(row[0] || "").toLowerCase();
+      if (firstCell.includes("student") || firstCell.includes("id") || firstCell === "name") {
+        return;
+      }
+    }
+    
+    const studentId = String(row[mapping.studentId] || "").trim();
+    const subject = String(row[mapping.subject] || "").trim();
+    const examId = String(row[mapping.examId] || "").trim();
+    const marks = parseFloat(row[mapping.marks]);
+    
+    // Validation
+    if (!studentId) {
+      results.failed++;
+      results.errors.push({ row: rowIdx + 1, error: "Student ID is required" });
+      return;
+    }
+    
+    if (!subject) {
+      results.failed++;
+      results.errors.push({ row: rowIdx + 1, error: "Subject is required" });
+      return;
+    }
+    
+    if (!examId) {
+      results.failed++;
+      results.errors.push({ row: rowIdx + 1, error: "Exam ID is required" });
+      return;
+    }
+    
+    if (isNaN(marks)) {
+      results.failed++;
+      results.errors.push({ row: rowIdx + 1, error: "Invalid marks value" });
+      return;
+    }
+    
+    // Check student exists
+    const student = studentIndex[studentId];
+    if (!student) {
+      results.failed++;
+      results.errors.push({ row: rowIdx + 1, error: `Student ${studentId} not found` });
+      return;
+    }
+    
+    // Check exam exists
+    const exam = examIndex[examId];
+    if (!exam) {
+      results.failed++;
+      results.errors.push({ row: rowIdx + 1, error: `Exam ${examId} not found` });
+      return;
+    }
+    
+    // Check exam is not locked
+    if (exam.locked) {
+      results.failed++;
+      results.lockedExams.push({ row: rowIdx + 1, examId: examId, examName: exam.name });
+      results.errors.push({ row: rowIdx + 1, error: `Exam ${exam.name} is locked` });
+      return;
+    }
+    
+    // Validate marks range
+    if (marks < 0 || marks > exam.maxMarks) {
+      results.failed++;
+      results.errors.push({ row: rowIdx + 1, error: `Marks must be 0-${exam.maxMarks}` });
+      return;
+    }
+    
+    const percentage = (marks / exam.maxMarks) * 100;
+    const grade = calculateGrade(percentage);
+    
+    validMarks.push({
+      studentId: studentId,
+      studentName: student.name,
+      subject: subject,
+      examId: examId,
+      examName: exam.name,
+      class: student.class,
+      section: student.section,
+      maxMarks: exam.maxMarks,
+      marks: marks,
+      percentage: percentage,
+      grade: grade
+    });
+    
+    results.created++;
+    
+    results.preview.push({
+      studentId: studentId,
+      studentName: student.name,
+      subject: subject,
+      examName: exam.name,
+      marks: marks,
+      maxMarks: exam.maxMarks,
+      percentage: percentage.toFixed(1) + "%",
+      grade: grade,
+      status: "VALID"
+    });
+  });
+  
+  // If preview only, return without writing
+  if (previewOnly) {
+    return {
+      success: true,
+      preview: true,
+      results: results,
+      message: `Preview: ${results.created} valid, ${results.failed} failed`
+    };
+  }
+  
+  // Write marks
+  const marksSheet = SpreadsheetApp.getActive().getSheetByName("Marks_Master");
+  const academicYear = getCurrentAcademicYear();
+  
+  validMarks.forEach(m => {
+    marksSheet.appendRow([
+      `MRK${Date.now()}${Math.random().toString(36).substr(2, 5)}`,
+      m.studentId,
+      m.studentName,
+      m.subject,
+      "",  // subjectCode
+      "ADMIN",
+      "Administrator",
+      m.examId,
+      m.examName,
+      m.class,
+      m.section,
+      m.maxMarks,
+      m.marks,
+      m.percentage.toFixed(2),
+      m.grade,
+      new Date(),
+      getCurrentUser(),
+      academicYear
+    ]);
+  });
+  
+  logAction("Admin Bulk Upload Marks", `Created: ${results.created}, Failed: ${results.failed}`);
+  
+  return {
+    success: true,
+    preview: false,
+    results: results,
+    message: `Import complete: ${results.created} entries added, ${results.failed} failed`
+  };
+}
+
+
+/**
+ * Get column headers from first row of data for mapping UI
+ * @param {Array} firstRow - First row of CSV data
+ * @returns {Array} Column options for mapping
+ */
+function getColumnMappingOptions(firstRow) {
+  return firstRow.map((header, idx) => ({
+    index: idx,
+    header: header,
+    suggested: suggestMapping(header)
+  }));
+}
+
+
+/**
+ * Suggest column mapping based on header name
+ * @param {string} header - Column header
+ * @returns {string} Suggested field name
+ */
+function suggestMapping(header) {
+  const h = String(header).toLowerCase();
+  if (h.includes("student") && h.includes("id")) return "studentId";
+  if (h.includes("subject")) return "subject";
+  if (h.includes("exam") && h.includes("id")) return "examId";
+  if (h.includes("mark") || h.includes("score")) return "marks";
+  if (h.includes("name")) return "studentName";
+  return "";
 }
