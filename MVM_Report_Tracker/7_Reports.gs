@@ -302,7 +302,7 @@ function downloadMarksReport(filters) {
   }
   
   // Format header
-  sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold").setBackground("#1a365d").setFontColor("#ffffff");
+  sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold").setBackground("#1a6b3a").setFontColor("#ffffff");
   
   logAction("Download Report", `Exported ${marks.length} marks entries`);
   

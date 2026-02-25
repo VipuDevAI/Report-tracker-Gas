@@ -98,7 +98,7 @@ function initializeApp() {
     const headerRange = sheet.getRange(1, 1, 1, structure[name].length);
     headerRange.setValues([structure[name]]);
     headerRange.setFontWeight("bold");
-    headerRange.setBackground("#1a365d");
+    headerRange.setBackground("#1a6b3a");
     headerRange.setFontColor("#ffffff");
     
     // Freeze header row
