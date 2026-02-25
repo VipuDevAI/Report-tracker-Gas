@@ -1,9 +1,10 @@
 /************************************************
  MVM REPORT TRACKER - AUTHENTICATION & ACCESS
  File 3 of 7
+ Role-Based Access Control Implementation
 ************************************************/
 
-// Admin email whitelist (also defined in Init for reference)
+// Admin email whitelist
 const ADMIN_EMAIL_LIST = [
   "rishisans83@gmail.com",
   "mvmseniors26@gmail.com"
@@ -28,12 +29,34 @@ function getEffectiveUser() {
 
 
 /**
+ * Get current user's role
+ * @returns {string} "admin" or "teacher"
+ */
+function getCurrentUserRole() {
+  const email = getCurrentUser();
+  
+  // Check if admin
+  if (ADMIN_EMAIL_LIST.includes(email)) {
+    return "admin";
+  }
+  
+  // Check if teacher exists in Teachers sheet
+  const teacher = getTeacherByEmail(email);
+  if (teacher) {
+    return "teacher";
+  }
+  
+  // Default to admin for unregistered users (school staff)
+  return "admin";
+}
+
+
+/**
  * Check if current user is an admin
  * @returns {boolean} True if admin
  */
 function isAdmin() {
-  const email = getCurrentUser();
-  return ADMIN_EMAIL_LIST.includes(email);
+  return getCurrentUserRole() === "admin";
 }
 
 
@@ -42,9 +65,7 @@ function isAdmin() {
  * @returns {boolean} True if teacher
  */
 function isTeacher() {
-  const email = getCurrentUser();
-  const teacher = getTeacherByEmail(email);
-  return teacher !== null;
+  return getCurrentUserRole() === "teacher";
 }
 
 
@@ -78,40 +99,134 @@ function getTeacherByEmail(email) {
 
 
 /**
+ * Get teacher assignment details for filtering
+ * @param {string} email - Teacher email (optional, uses current user if not provided)
+ * @returns {Object|null} Teacher assignment object with parsed arrays
+ */
+function getTeacherAssignment(email) {
+  const teacherEmail = email || getCurrentUser();
+  const teacher = getTeacherByEmail(teacherEmail);
+  
+  if (!teacher) return null;
+  
+  // Parse comma-separated values into arrays
+  const classesRaw = teacher.classes || "";
+  const sectionsRaw = teacher.sections || "";
+  
+  return {
+    teacherId: teacher.teacherId,
+    name: teacher.name,
+    email: teacher.email,
+    subject: teacher.subject,
+    classes: classesRaw.split(",").map(c => c.trim()).filter(c => c),
+    sections: sectionsRaw.split(",").map(s => s.trim()).filter(s => s),
+    hasAllClasses: classesRaw.toLowerCase().includes("all"),
+    hasAllSections: sectionsRaw.toLowerCase().includes("all")
+  };
+}
+
+
+/**
+ * Apply teacher filter to data array
+ * Filters students/marks based on teacher's assigned classes, sections, and subject
+ * @param {Array} data - Array of objects to filter
+ * @param {Object} options - Filter options { filterBySubject: boolean, subjectField: string }
+ * @returns {Array} Filtered data
+ */
+function applyTeacherFilter(data, options) {
+  // Admin sees everything
+  if (isAdmin()) {
+    return data;
+  }
+  
+  const assignment = getTeacherAssignment();
+  if (!assignment) {
+    return []; // No assignment = no access
+  }
+  
+  const opts = options || {};
+  const filterBySubject = opts.filterBySubject || false;
+  const subjectField = opts.subjectField || "subject";
+  
+  return data.filter(item => {
+    // Check class assignment
+    const itemClass = String(item.class || item.Class || "");
+    const classMatch = assignment.hasAllClasses || 
+                       assignment.classes.includes(itemClass) ||
+                       assignment.classes.some(c => itemClass.includes(c));
+    
+    if (!classMatch) return false;
+    
+    // Check section assignment
+    const itemSection = String(item.section || item.Section || "");
+    const sectionMatch = assignment.hasAllSections || 
+                         assignment.sections.includes(itemSection) ||
+                         itemSection === "";
+    
+    if (!sectionMatch) return false;
+    
+    // Check subject if required
+    if (filterBySubject) {
+      const itemSubject = String(item[subjectField] || "");
+      const subjectMatch = assignment.subject === "All" || 
+                           assignment.subject === itemSubject ||
+                           itemSubject === "";
+      if (!subjectMatch) return false;
+    }
+    
+    return true;
+  });
+}
+
+
+/**
  * Get current user info (admin/teacher details)
  * @returns {Object} User info object
  */
 function getCurrentUserInfo() {
   const email = getCurrentUser();
+  const role = getCurrentUserRole();
   
-  if (ADMIN_EMAIL_LIST.includes(email)) {
+  if (role === "admin") {
     return {
       type: "admin",
+      role: "admin",
       email: email,
       name: email.split("@")[0],
-      permissions: ["all"]
+      permissions: ["all"],
+      canManageMasterData: true,
+      canLockExams: true,
+      canViewAllData: true
     };
   }
   
-  const teacher = getTeacherByEmail(email);
-  if (teacher) {
+  const assignment = getTeacherAssignment(email);
+  if (assignment) {
     return {
       type: "teacher",
+      role: "teacher",
       email: email,
-      name: teacher.name,
-      teacherId: teacher.teacherId,
-      subject: teacher.subject,
-      classes: teacher.classes,
-      sections: teacher.sections,
-      permissions: ["view_own_marks", "enter_marks", "view_students"]
+      name: assignment.name,
+      teacherId: assignment.teacherId,
+      subject: assignment.subject,
+      classes: assignment.classes,
+      sections: assignment.sections,
+      permissions: ["view_own_data", "enter_marks", "view_students"],
+      canManageMasterData: false,
+      canLockExams: false,
+      canViewAllData: false
     };
   }
   
   return {
     type: "viewer",
+    role: "viewer",
     email: email,
     name: email.split("@")[0],
-    permissions: ["view_only"]
+    permissions: ["view_only"],
+    canManageMasterData: false,
+    canLockExams: false,
+    canViewAllData: false
   };
 }
 
@@ -124,7 +239,7 @@ function getCurrentUserInfo() {
 function hasPermission(permission) {
   const userInfo = getCurrentUserInfo();
   
-  if (userInfo.type === "admin") return true;
+  if (userInfo.role === "admin") return true;
   
   return userInfo.permissions.includes(permission);
 }
@@ -139,14 +254,13 @@ function hasPermission(permission) {
 function canAccessClass(classNum, section) {
   if (isAdmin()) return true;
   
-  const teacher = getTeacherByEmail(getCurrentUser());
-  if (!teacher) return false;
+  const assignment = getTeacherAssignment();
+  if (!assignment) return false;
   
-  const teacherClasses = teacher.classes.split(",").map(c => c.trim());
-  const teacherSections = teacher.sections.split(",").map(s => s.trim());
+  const classMatch = assignment.hasAllClasses || assignment.classes.includes(String(classNum));
+  const sectionMatch = assignment.hasAllSections || assignment.sections.includes(section);
   
-  return teacherClasses.includes(String(classNum)) && 
-         (teacherSections.includes(section) || teacherSections.includes("All"));
+  return classMatch && sectionMatch;
 }
 
 
@@ -158,10 +272,22 @@ function canAccessClass(classNum, section) {
 function canEditSubject(subject) {
   if (isAdmin()) return true;
   
-  const teacher = getTeacherByEmail(getCurrentUser());
-  if (!teacher) return false;
+  const assignment = getTeacherAssignment();
+  if (!assignment) return false;
   
-  return teacher.subject === subject || teacher.subject === "All";
+  return assignment.subject === "All" || assignment.subject === subject;
+}
+
+
+/**
+ * Validate teacher can access specific student
+ * @param {Object} student - Student object with class and section
+ * @returns {boolean} True if can access
+ */
+function canAccessStudent(student) {
+  if (isAdmin()) return true;
+  
+  return canAccessClass(student.class, student.section);
 }
 
 
@@ -171,19 +297,35 @@ function canEditSubject(subject) {
  */
 function getAccessControl() {
   const userInfo = getCurrentUserInfo();
+  const isUserAdmin = userInfo.role === "admin";
   
   return {
     user: userInfo,
-    canUploadStudents: userInfo.type === "admin",
-    canUploadTeachers: userInfo.type === "admin",
-    canCreateExam: userInfo.type === "admin",
-    canLockExam: userInfo.type === "admin",
-    canEnterMarks: userInfo.type === "admin" || userInfo.type === "teacher",
-    canViewAllMarks: userInfo.type === "admin",
+    role: userInfo.role,
+    // Master Data
+    canUploadStudents: isUserAdmin,
+    canUploadTeachers: isUserAdmin,
+    canManageSubjects: isUserAdmin,
+    canManageClasses: isUserAdmin,
+    // Exams
+    canCreateExam: isUserAdmin,
+    canLockExam: isUserAdmin,
+    canDeleteExam: isUserAdmin,
+    // Marks
+    canEnterMarks: true, // Both admin and teachers
+    canViewMarks: true,
+    canDeleteMarks: isUserAdmin,
+    // Analytics & Reports
     canViewAnalytics: true,
     canViewReports: true,
-    canModifySettings: userInfo.type === "admin",
-    canResetData: userInfo.type === "admin"
+    canExportData: true,
+    // Settings
+    canModifyGradeRanges: isUserAdmin,
+    canModifySchoolSettings: isUserAdmin,
+    canResetData: isUserAdmin,
+    // Data scope
+    viewAllData: isUserAdmin,
+    filteredByAssignment: !isUserAdmin
   };
 }
 
@@ -209,6 +351,19 @@ function requireTeacherOrAdmin(action) {
     logAction("Access Denied", `${getCurrentUser()} attempted: ${action}`);
     throw new Error(`Access denied. Teacher or Admin privileges required for: ${action}`);
   }
+}
+
+
+/**
+ * Get current academic year from settings
+ * @returns {string} Academic year (e.g., "2024-2025")
+ */
+function getCurrentAcademicYear() {
+  const sheet = SpreadsheetApp.getActive().getSheetByName("Settings_School");
+  const data = sheet.getDataRange().getValues();
+  
+  const yearRow = data.find(r => r[0] === "AcademicYear");
+  return yearRow ? yearRow[1] : "2024-2025";
 }
 
 
