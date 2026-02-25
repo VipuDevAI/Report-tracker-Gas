@@ -1,10 +1,378 @@
 /************************************************
  MVM REPORT TRACKER - DATA UPLOAD & MANAGEMENT
  File 2 of 7
+ With Bulk Upload Features
 ************************************************/
 
 /**
- * Upload/Replace students data
+ * Bulk upload students from CSV/array data
+ * @param {Array} data - 2D array of student data
+ * @param {Object} options - { updateExisting: boolean, preview: boolean }
+ * @returns {Object} Result object with summary
+ */
+function bulkUploadStudents(data, options) {
+  if (!isAdmin()) {
+    return { success: false, message: "Access denied. Admin privileges required." };
+  }
+  
+  if (!data || !Array.isArray(data) || data.length === 0) {
+    return { success: false, message: "No data provided." };
+  }
+  
+  const opts = options || {};
+  const updateExisting = opts.updateExisting || false;
+  const previewOnly = opts.preview || false;
+  
+  const sheet = SpreadsheetApp.getActive().getSheetByName("Students");
+  const existingData = sheet.getDataRange().getValues();
+  
+  // Build index of existing students (class-section-rollno as key)
+  const existingIndex = {};
+  const existingIdIndex = {};
+  existingData.slice(1).forEach((row, idx) => {
+    const key = `${row[2]}-${row[3]}-${row[5]}`; // class-section-rollno
+    existingIndex[key] = { row: row, index: idx + 2 };
+    if (row[0]) existingIdIndex[row[0]] = { row: row, index: idx + 2 };
+  });
+  
+  const results = {
+    preview: [],
+    created: 0,
+    updated: 0,
+    failed: 0,
+    errors: [],
+    duplicates: []
+  };
+  
+  const toCreate = [];
+  const toUpdate = [];
+  
+  data.forEach((row, rowIdx) => {
+    // Skip header row if detected
+    if (rowIdx === 0 && (row[0] === "StudentID" || row[0] === "StudentId" || row[1] === "Name")) {
+      return;
+    }
+    
+    const studentId = row[0] || `STU${Date.now()}${rowIdx}`;
+    const name = row[1] || "";
+    const cls = String(row[2] || "");
+    const section = row[3] || "A";
+    const stream = row[4] || "Science";
+    const rollNo = row[5] || rowIdx;
+    const status = row[6] || "Active";
+    
+    // Validation
+    if (!name) {
+      results.failed++;
+      results.errors.push({ row: rowIdx + 1, error: "Name is required" });
+      return;
+    }
+    
+    if (!cls) {
+      results.failed++;
+      results.errors.push({ row: rowIdx + 1, error: "Class is required" });
+      return;
+    }
+    
+    // Check for duplicates (same class + section + roll no)
+    const key = `${cls}-${section}-${rollNo}`;
+    const existingByKey = existingIndex[key];
+    const existingById = existingIdIndex[studentId];
+    
+    const studentData = [
+      studentId,
+      name,
+      cls,
+      section,
+      stream,
+      rollNo,
+      row[7] || "",  // parentEmail
+      row[8] || "",  // phone
+      new Date(),
+      status
+    ];
+    
+    if (existingByKey || existingById) {
+      if (updateExisting) {
+        const existingRecord = existingByKey || existingById;
+        toUpdate.push({
+          rowIndex: existingRecord.index,
+          data: studentData,
+          original: existingRecord.row
+        });
+        results.updated++;
+      } else {
+        results.duplicates.push({
+          row: rowIdx + 1,
+          name: name,
+          class: cls,
+          section: section,
+          rollNo: rollNo
+        });
+        results.failed++;
+      }
+    } else {
+      toCreate.push(studentData);
+      results.created++;
+    }
+    
+    results.preview.push({
+      studentId: studentId,
+      name: name,
+      class: cls,
+      section: section,
+      stream: stream,
+      rollNo: rollNo,
+      status: existingByKey || existingById ? (updateExisting ? "UPDATE" : "DUPLICATE") : "NEW"
+    });
+  });
+  
+  // If preview only, return without writing
+  if (previewOnly) {
+    return {
+      success: true,
+      preview: true,
+      results: results,
+      message: `Preview: ${results.created} new, ${results.updated} updates, ${results.failed} failed`
+    };
+  }
+  
+  // Write new students
+  if (toCreate.length > 0) {
+    const lastRow = sheet.getLastRow();
+    sheet.getRange(lastRow + 1, 1, toCreate.length, 10).setValues(toCreate);
+  }
+  
+  // Update existing students
+  toUpdate.forEach(item => {
+    sheet.getRange(item.rowIndex, 1, 1, 10).setValues([item.data]);
+  });
+  
+  logAction("Bulk Upload Students", `Created: ${results.created}, Updated: ${results.updated}, Failed: ${results.failed}`);
+  
+  return {
+    success: true,
+    preview: false,
+    results: results,
+    message: `Import complete: ${results.created} created, ${results.updated} updated, ${results.failed} failed`
+  };
+}
+
+
+/**
+ * Bulk upload teachers with password generation
+ * @param {Array} data - 2D array of teacher data
+ * @param {Object} options - { updateExisting: boolean, preview: boolean }
+ * @returns {Object} Result object with credentials
+ */
+function bulkUploadTeachers(data, options) {
+  if (!isAdmin()) {
+    return { success: false, message: "Access denied. Admin privileges required." };
+  }
+  
+  if (!data || !Array.isArray(data) || data.length === 0) {
+    return { success: false, message: "No data provided." };
+  }
+  
+  const opts = options || {};
+  const updateExisting = opts.updateExisting || false;
+  const previewOnly = opts.preview || false;
+  
+  const sheet = SpreadsheetApp.getActive().getSheetByName("Teachers");
+  const existingData = sheet.getDataRange().getValues();
+  
+  // Build index of existing teachers by email
+  const existingIndex = {};
+  existingData.slice(1).forEach((row, idx) => {
+    if (row[5]) existingIndex[row[5].toLowerCase()] = { row: row, index: idx + 2 };
+  });
+  
+  const results = {
+    preview: [],
+    created: 0,
+    updated: 0,
+    failed: 0,
+    errors: [],
+    credentials: []  // Store generated credentials for download
+  };
+  
+  const toCreate = [];
+  const toUpdate = [];
+  
+  data.forEach((row, rowIdx) => {
+    // Skip header row
+    if (rowIdx === 0 && (row[0] === "TeacherID" || row[0] === "TeacherId" || row[1] === "Name")) {
+      return;
+    }
+    
+    const teacherId = row[0] || `TCH${Date.now()}${rowIdx}`;
+    const name = row[1] || "";
+    const subject = row[2] || "";
+    const classes = row[3] || "";
+    const sections = row[4] || "";
+    const email = row[5] || "";
+    const phone = row[6] || "";
+    const password = row[7] || generatePassword(8);
+    const status = row[8] || "Active";
+    
+    // Validation
+    if (!name) {
+      results.failed++;
+      results.errors.push({ row: rowIdx + 1, error: "Name is required" });
+      return;
+    }
+    
+    // Hash password
+    const hashedPassword = hashPassword(password);
+    
+    const teacherData = [
+      teacherId,
+      name,
+      subject,
+      classes,
+      sections,
+      email,
+      phone,
+      new Date(),
+      status,
+      hashedPassword  // Store hashed password
+    ];
+    
+    const existingByEmail = email ? existingIndex[email.toLowerCase()] : null;
+    
+    if (existingByEmail) {
+      if (updateExisting) {
+        toUpdate.push({
+          rowIndex: existingByEmail.index,
+          data: teacherData,
+          original: existingByEmail.row
+        });
+        results.updated++;
+        results.credentials.push({
+          teacherId: teacherId,
+          name: name,
+          email: email,
+          password: password,  // Plain password for credential sheet
+          status: "UPDATED"
+        });
+      } else {
+        results.failed++;
+        results.errors.push({ row: rowIdx + 1, error: `Email ${email} already exists` });
+      }
+    } else {
+      toCreate.push(teacherData);
+      results.created++;
+      results.credentials.push({
+        teacherId: teacherId,
+        name: name,
+        email: email,
+        password: password,  // Plain password for credential sheet
+        status: "NEW"
+      });
+    }
+    
+    results.preview.push({
+      teacherId: teacherId,
+      name: name,
+      email: email,
+      subject: subject,
+      classes: classes,
+      sections: sections,
+      status: existingByEmail ? (updateExisting ? "UPDATE" : "DUPLICATE") : "NEW"
+    });
+  });
+  
+  // If preview only, return without writing
+  if (previewOnly) {
+    return {
+      success: true,
+      preview: true,
+      results: results,
+      message: `Preview: ${results.created} new, ${results.updated} updates, ${results.failed} failed`
+    };
+  }
+  
+  // Write new teachers
+  if (toCreate.length > 0) {
+    const lastRow = sheet.getLastRow();
+    sheet.getRange(lastRow + 1, 1, toCreate.length, 10).setValues(toCreate);
+  }
+  
+  // Update existing teachers
+  toUpdate.forEach(item => {
+    sheet.getRange(item.rowIndex, 1, 1, 10).setValues([item.data]);
+  });
+  
+  logAction("Bulk Upload Teachers", `Created: ${results.created}, Updated: ${results.updated}, Failed: ${results.failed}`);
+  
+  return {
+    success: true,
+    preview: false,
+    results: results,
+    credentials: results.credentials,  // Return credentials for download
+    message: `Import complete: ${results.created} created, ${results.updated} updated, ${results.failed} failed`
+  };
+}
+
+
+/**
+ * Generate random password
+ * @param {number} length - Password length
+ * @returns {string} Generated password
+ */
+function generatePassword(length) {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+  let password = "";
+  for (let i = 0; i < length; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return password;
+}
+
+
+/**
+ * Hash password using SHA-256
+ * @param {string} password - Plain password
+ * @returns {string} Hashed password
+ */
+function hashPassword(password) {
+  const hash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, password);
+  return hash.map(b => ('0' + (b & 0xFF).toString(16)).slice(-2)).join('');
+}
+
+
+/**
+ * Verify password
+ * @param {string} password - Plain password
+ * @param {string} hash - Stored hash
+ * @returns {boolean} True if match
+ */
+function verifyPassword(password, hash) {
+  return hashPassword(password) === hash;
+}
+
+
+/**
+ * Generate downloadable credentials CSV
+ * @param {Array} credentials - Array of credential objects
+ * @returns {string} CSV content
+ */
+function generateCredentialsCSV(credentials) {
+  const headers = ["Teacher ID", "Name", "Email", "Password", "Status"];
+  const rows = credentials.map(c => [
+    c.teacherId,
+    c.name,
+    c.email,
+    c.password,
+    c.status
+  ]);
+  
+  return [headers, ...rows].map(row => row.join(",")).join("\n");
+}
+
+
+/**
+ * Upload/Replace students data (Legacy - kept for compatibility)
  * @param {Array} data - 2D array of student data
  * @returns {Object} Result object
  */
@@ -13,44 +381,7 @@ function replaceStudents(data) {
     return { success: false, message: "Access denied. Admin privileges required." };
   }
   
-  if (!data || !Array.isArray(data) || data.length === 0) {
-    return { success: false, message: "Invalid data provided." };
-  }
-  
-  const sheet = SpreadsheetApp.getActive().getSheetByName("Students");
-  const headers = ["StudentID", "Name", "Class", "Section", "Stream", "RollNo", "ParentEmail", "Phone", "JoinDate", "Status"];
-  
-  // Clear existing data (keep header)
-  if (sheet.getLastRow() > 1) {
-    sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).clearContent();
-  }
-  
-  // Process and validate data
-  const processedData = data.map((row, index) => {
-    const studentId = row[0] || `STU${Date.now()}${index}`;
-    return [
-      studentId,
-      row[1] || "",           // Name
-      row[2] || "",           // Class
-      row[3] || "A",          // Section
-      row[4] || "Science",    // Stream
-      row[5] || index + 1,    // RollNo
-      row[6] || "",           // ParentEmail
-      row[7] || "",           // Phone
-      row[8] || new Date(),   // JoinDate
-      row[9] || "Active"      // Status
-    ];
-  });
-  
-  sheet.getRange(2, 1, processedData.length, 10).setValues(processedData);
-  
-  logAction("Students Upload", `${processedData.length} students uploaded`);
-  
-  return { 
-    success: true, 
-    message: `${processedData.length} students uploaded successfully!`,
-    count: processedData.length
-  };
+  return bulkUploadStudents(data, { updateExisting: true });
 }
 
 
@@ -60,6 +391,10 @@ function replaceStudents(data) {
  * @returns {Object} Result object
  */
 function addStudent(student) {
+  if (!isAdmin()) {
+    return { success: false, message: "Access denied. Admin privileges required." };
+  }
+  
   if (!student || !student.name || !student.class) {
     return { success: false, message: "Name and Class are required." };
   }
@@ -93,6 +428,10 @@ function addStudent(student) {
  * @returns {Object} Result object
  */
 function updateStudent(studentId, updates) {
+  if (!isAdmin()) {
+    return { success: false, message: "Access denied. Admin privileges required." };
+  }
+  
   const sheet = SpreadsheetApp.getActive().getSheetByName("Students");
   const data = sheet.getDataRange().getValues();
   
@@ -130,6 +469,9 @@ function updateStudent(studentId, updates) {
  * @returns {Object} Result object
  */
 function deleteStudent(studentId) {
+  if (!isAdmin()) {
+    return { success: false, message: "Access denied. Admin privileges required." };
+  }
   return updateStudent(studentId, { status: "Inactive" });
 }
 
@@ -185,7 +527,7 @@ function getStudents(filters) {
 
 
 /**
- * Upload/Replace teachers data
+ * Upload/Replace teachers data (Legacy - kept for compatibility)
  * @param {Array} data - 2D array of teacher data
  * @returns {Object} Result object
  */
@@ -194,42 +536,7 @@ function replaceTeachers(data) {
     return { success: false, message: "Access denied. Admin privileges required." };
   }
   
-  if (!data || !Array.isArray(data) || data.length === 0) {
-    return { success: false, message: "Invalid data provided." };
-  }
-  
-  const sheet = SpreadsheetApp.getActive().getSheetByName("Teachers");
-  
-  // Clear existing data (keep header)
-  if (sheet.getLastRow() > 1) {
-    sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).clearContent();
-  }
-  
-  // Process and validate data
-  const processedData = data.map((row, index) => {
-    const teacherId = row[0] || `TCH${Date.now()}${index}`;
-    return [
-      teacherId,
-      row[1] || "",           // Name
-      row[2] || "",           // Subject
-      row[3] || "",           // Classes
-      row[4] || "",           // Sections
-      row[5] || "",           // Email
-      row[6] || "",           // Phone
-      row[7] || new Date(),   // JoinDate
-      row[8] || "Active"      // Status
-    ];
-  });
-  
-  sheet.getRange(2, 1, processedData.length, 9).setValues(processedData);
-  
-  logAction("Teachers Upload", `${processedData.length} teachers uploaded`);
-  
-  return { 
-    success: true, 
-    message: `${processedData.length} teachers uploaded successfully!`,
-    count: processedData.length
-  };
+  return bulkUploadTeachers(data, { updateExisting: true });
 }
 
 
@@ -239,12 +546,18 @@ function replaceTeachers(data) {
  * @returns {Object} Result object
  */
 function addTeacher(teacher) {
-  if (!teacher || !teacher.name || !teacher.email) {
-    return { success: false, message: "Name and Email are required." };
+  if (!isAdmin()) {
+    return { success: false, message: "Access denied. Admin privileges required." };
+  }
+  
+  if (!teacher || !teacher.name) {
+    return { success: false, message: "Name is required." };
   }
   
   const sheet = SpreadsheetApp.getActive().getSheetByName("Teachers");
   const teacherId = `TCH${Date.now()}`;
+  const password = teacher.password || generatePassword(8);
+  const hashedPassword = hashPassword(password);
   
   sheet.appendRow([
     teacherId,
@@ -252,15 +565,26 @@ function addTeacher(teacher) {
     teacher.subject || "",
     teacher.classes || "",
     teacher.sections || "",
-    teacher.email,
+    teacher.email || "",
     teacher.phone || "",
     new Date(),
-    "Active"
+    "Active",
+    hashedPassword
   ]);
   
   logAction("Add Teacher", `Added teacher: ${teacher.name}`);
   
-  return { success: true, message: "Teacher added successfully!", teacherId: teacherId };
+  return { 
+    success: true, 
+    message: "Teacher added successfully!", 
+    teacherId: teacherId,
+    credentials: {
+      teacherId: teacherId,
+      name: teacher.name,
+      email: teacher.email,
+      password: password  // Return plain password once
+    }
+  };
 }
 
 
@@ -270,6 +594,23 @@ function addTeacher(teacher) {
  * @returns {Array} Filtered teachers
  */
 function getTeachers(filters) {
+  if (!isAdmin()) {
+    // Teachers can only see their own info
+    const assignment = getTeacherAssignment();
+    if (assignment) {
+      return [{
+        teacherId: assignment.teacherId,
+        name: assignment.name,
+        subject: assignment.subject,
+        classes: assignment.classes.join(","),
+        sections: assignment.sections.join(","),
+        email: assignment.email,
+        status: "Active"
+      }];
+    }
+    return [];
+  }
+  
   const sheet = SpreadsheetApp.getActive().getSheetByName("Teachers");
   const data = sheet.getDataRange().getValues();
   
@@ -399,4 +740,84 @@ function getSections() {
  */
 function getStreams() {
   return ["Science", "Computer Science", "Commerce"];
+}
+
+
+/**
+ * Auto promote students to next class
+ * @param {string} fromYear - Source academic year
+ * @param {string} toYear - Target academic year
+ * @returns {Object} Result object
+ */
+function promoteStudents(fromYear, toYear) {
+  if (!isAdmin()) {
+    return { success: false, message: "Access denied. Admin privileges required." };
+  }
+  
+  const sheet = SpreadsheetApp.getActive().getSheetByName("Students");
+  const data = sheet.getDataRange().getValues();
+  
+  let promoted = 0;
+  let graduated = 0;
+  
+  data.forEach((row, idx) => {
+    if (idx === 0) return; // Skip header
+    
+    const currentClass = parseInt(row[2]);
+    if (isNaN(currentClass)) return;
+    
+    if (currentClass >= 12) {
+      // Graduate (mark as Alumni)
+      sheet.getRange(idx + 1, 10).setValue("Alumni");
+      graduated++;
+    } else {
+      // Promote to next class
+      sheet.getRange(idx + 1, 3).setValue(currentClass + 1);
+      promoted++;
+    }
+  });
+  
+  // Update academic year in settings
+  updateSchoolSetting("AcademicYear", toYear);
+  
+  logAction("Promote Students", `Promoted: ${promoted}, Graduated: ${graduated}`);
+  
+  return {
+    success: true,
+    message: `Promotion complete: ${promoted} promoted, ${graduated} graduated`,
+    promoted: promoted,
+    graduated: graduated
+  };
+}
+
+
+/**
+ * Archive year data
+ * @param {string} academicYear - Year to archive
+ * @returns {Object} Result object
+ */
+function archiveYearData(academicYear) {
+  if (!isAdmin()) {
+    return { success: false, message: "Access denied. Admin privileges required." };
+  }
+  
+  const ss = SpreadsheetApp.getActive();
+  const timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy_MM_dd");
+  
+  const sheetsToArchive = ["Students", "Marks_Master", "Exams"];
+  
+  sheetsToArchive.forEach(name => {
+    const sheet = ss.getSheetByName(name);
+    if (sheet && sheet.getLastRow() > 1) {
+      const copy = sheet.copyTo(ss);
+      copy.setName(`${name}_${academicYear}_${timestamp}`);
+    }
+  });
+  
+  logAction("Archive Year", `Archived data for ${academicYear}`);
+  
+  return {
+    success: true,
+    message: `Data archived for ${academicYear}`
+  };
 }
