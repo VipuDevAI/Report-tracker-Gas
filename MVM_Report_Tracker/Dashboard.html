@@ -2488,6 +2488,507 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
       initializeDashboard();
       google.script.run.rebuildAggregates();
     }
+    
+    // ================== BULK UPLOAD FUNCTIONS ==================
+    
+    // Parse CSV text to 2D array
+    function parseCSV(text) {
+      const lines = text.trim().split('\n');
+      return lines.map(line => {
+        const result = [];
+        let current = '';
+        let inQuotes = false;
+        
+        for (let i = 0; i < line.length; i++) {
+          const char = line[i];
+          if (char === '"') {
+            inQuotes = !inQuotes;
+          } else if (char === ',' && !inQuotes) {
+            result.push(current.trim());
+            current = '';
+          } else {
+            current += char;
+          }
+        }
+        result.push(current.trim());
+        return result;
+      });
+    }
+    
+    // Preview student upload
+    function previewStudentUpload() {
+      const text = document.getElementById('bulkStudentData').value;
+      if (!text.trim()) {
+        alert('Please enter data to preview');
+        return;
+      }
+      
+      const data = parseCSV(text);
+      const updateExisting = document.getElementById('updateExistingStudents').checked;
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          const container = document.getElementById('studentUploadPreview');
+          if (result.success) {
+            container.innerHTML = `
+              <h4 style="margin-bottom: 12px;">Preview (${result.results.preview.length} rows)</h4>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Status</th>
+                    <th>Name</th>
+                    <th>Class</th>
+                    <th>Section</th>
+                    <th>Stream</th>
+                    <th>Roll No</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${result.results.preview.map(p => `
+                    <tr>
+                      <td><span class="badge ${p.status === 'NEW' ? 'badge-success' : p.status === 'UPDATE' ? 'badge-info' : 'badge-warning'}">${p.status}</span></td>
+                      <td>${p.name}</td>
+                      <td>${p.class}</td>
+                      <td>${p.section}</td>
+                      <td>${p.stream}</td>
+                      <td>${p.rollNo}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+              <p style="margin-top: 12px;">${result.message}</p>
+            `;
+          } else {
+            container.innerHTML = `<p style="color: var(--danger);">${result.message}</p>`;
+          }
+        })
+        .bulkUploadStudents(data, { updateExisting: updateExisting, preview: true });
+    }
+    
+    // Execute student upload
+    function executeStudentUpload() {
+      const text = document.getElementById('bulkStudentData').value;
+      if (!text.trim()) {
+        alert('Please enter data to import');
+        return;
+      }
+      
+      if (!confirm('Are you sure you want to import the students?')) return;
+      
+      const data = parseCSV(text);
+      const updateExisting = document.getElementById('updateExistingStudents').checked;
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          const container = document.getElementById('studentUploadResults');
+          if (result.success) {
+            container.innerHTML = `
+              <div style="background: #dcfce7; padding: 16px; border-radius: 8px;">
+                <strong style="color: #15803d;">Import Complete!</strong>
+                <p style="margin-top: 8px;">Created: ${result.results.created} | Updated: ${result.results.updated} | Failed: ${result.results.failed}</p>
+                ${result.results.errors.length > 0 ? `
+                  <details style="margin-top: 8px;">
+                    <summary style="cursor: pointer;">View Errors (${result.results.errors.length})</summary>
+                    <ul style="margin-top: 8px; font-size: 12px;">
+                      ${result.results.errors.map(e => `<li>Row ${e.row}: ${e.error}</li>`).join('')}
+                    </ul>
+                  </details>
+                ` : ''}
+              </div>
+            `;
+            document.getElementById('bulkStudentData').value = '';
+            document.getElementById('studentUploadPreview').innerHTML = '';
+          } else {
+            container.innerHTML = `<p style="color: var(--danger);">${result.message}</p>`;
+          }
+        })
+        .bulkUploadStudents(data, { updateExisting: updateExisting, preview: false });
+    }
+    
+    // Preview teacher upload
+    function previewTeacherUpload() {
+      const text = document.getElementById('bulkTeacherData').value;
+      if (!text.trim()) {
+        alert('Please enter data to preview');
+        return;
+      }
+      
+      const data = parseCSV(text);
+      const updateExisting = document.getElementById('updateExistingTeachers').checked;
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          const container = document.getElementById('teacherUploadPreview');
+          if (result.success) {
+            container.innerHTML = `
+              <h4 style="margin-bottom: 12px;">Preview (${result.results.preview.length} rows)</h4>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Status</th>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Subject</th>
+                    <th>Classes</th>
+                    <th>Sections</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${result.results.preview.map(p => `
+                    <tr>
+                      <td><span class="badge ${p.status === 'NEW' ? 'badge-success' : p.status === 'UPDATE' ? 'badge-info' : 'badge-warning'}">${p.status}</span></td>
+                      <td>${p.name}</td>
+                      <td>${p.email}</td>
+                      <td>${p.subject}</td>
+                      <td>${p.classes}</td>
+                      <td>${p.sections}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+              <p style="margin-top: 12px;">${result.message}</p>
+            `;
+          } else {
+            container.innerHTML = `<p style="color: var(--danger);">${result.message}</p>`;
+          }
+        })
+        .bulkUploadTeachers(data, { updateExisting: updateExisting, preview: true });
+    }
+    
+    // Execute teacher upload
+    function executeTeacherUpload() {
+      const text = document.getElementById('bulkTeacherData').value;
+      if (!text.trim()) {
+        alert('Please enter data to import');
+        return;
+      }
+      
+      if (!confirm('Are you sure you want to import the teachers?')) return;
+      
+      const data = parseCSV(text);
+      const updateExisting = document.getElementById('updateExistingTeachers').checked;
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          const container = document.getElementById('teacherUploadResults');
+          if (result.success) {
+            container.innerHTML = `
+              <div style="background: #dcfce7; padding: 16px; border-radius: 8px;">
+                <strong style="color: #15803d;">Import Complete!</strong>
+                <p style="margin-top: 8px;">Created: ${result.results.created} | Updated: ${result.results.updated} | Failed: ${result.results.failed}</p>
+              </div>
+            `;
+            
+            // Show credentials for download
+            if (result.credentials && result.credentials.length > 0) {
+              const credContainer = document.getElementById('teacherCredentials');
+              const csvContent = "Teacher ID,Name,Email,Password,Status\\n" + 
+                result.credentials.map(c => `${c.teacherId},${c.name},${c.email},${c.password},${c.status}`).join('\\n');
+              
+              credContainer.innerHTML = `
+                <div style="background: #dbeafe; padding: 16px; border-radius: 8px; margin-top: 16px;">
+                  <strong style="color: #1d4ed8;">Teacher Credentials</strong>
+                  <p style="margin-top: 8px; font-size: 13px;">Download credentials to share with teachers. Passwords are auto-generated.</p>
+                  <button class="btn btn-primary" style="margin-top: 12px;" onclick="downloadCredentials()">Download Credentials CSV</button>
+                  <textarea id="credentialsData" style="display:none;">${csvContent}</textarea>
+                </div>
+              `;
+            }
+            
+            document.getElementById('bulkTeacherData').value = '';
+            document.getElementById('teacherUploadPreview').innerHTML = '';
+          } else {
+            container.innerHTML = `<p style="color: var(--danger);">${result.message}</p>`;
+          }
+        })
+        .bulkUploadTeachers(data, { updateExisting: updateExisting, preview: false });
+    }
+    
+    // Download credentials CSV
+    function downloadCredentials() {
+      const csvContent = document.getElementById('credentialsData').value;
+      const blob = new Blob([csvContent], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'teacher_credentials.csv';
+      a.click();
+    }
+    
+    // Preview marks upload
+    function previewMarksUpload() {
+      const text = document.getElementById('bulkMarksData').value;
+      if (!text.trim()) {
+        alert('Please enter data to preview');
+        return;
+      }
+      
+      const data = parseCSV(text);
+      const mapping = {
+        studentId: parseInt(document.getElementById('mapStudentId').value),
+        subject: parseInt(document.getElementById('mapSubject').value),
+        examId: parseInt(document.getElementById('mapExamId').value),
+        marks: parseInt(document.getElementById('mapMarks').value)
+      };
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          const container = document.getElementById('marksUploadPreview');
+          if (result.success) {
+            container.innerHTML = `
+              <h4 style="margin-bottom: 12px;">Preview (${result.results.preview.length} valid rows)</h4>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Status</th>
+                    <th>Student</th>
+                    <th>Subject</th>
+                    <th>Exam</th>
+                    <th>Marks</th>
+                    <th>Grade</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${result.results.preview.map(p => `
+                    <tr>
+                      <td><span class="badge ${p.status === 'VALID' ? 'badge-success' : 'badge-danger'}">${p.status}</span></td>
+                      <td>${p.studentName}</td>
+                      <td>${p.subject}</td>
+                      <td>${p.examName}</td>
+                      <td>${p.marks}/${p.maxMarks}</td>
+                      <td>${p.grade}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+              <p style="margin-top: 12px;">${result.message}</p>
+              ${result.results.errors.length > 0 ? `
+                <details style="margin-top: 8px;">
+                  <summary style="cursor: pointer; color: var(--danger);">View Errors (${result.results.errors.length})</summary>
+                  <ul style="margin-top: 8px; font-size: 12px; color: var(--danger);">
+                    ${result.results.errors.map(e => `<li>Row ${e.row}: ${e.error}</li>`).join('')}
+                  </ul>
+                </details>
+              ` : ''}
+            `;
+          } else {
+            container.innerHTML = `<p style="color: var(--danger);">${result.message}</p>`;
+          }
+        })
+        .adminBulkUploadMarks(data, mapping, { preview: true });
+    }
+    
+    // Execute marks upload
+    function executeMarksUpload() {
+      const text = document.getElementById('bulkMarksData').value;
+      if (!text.trim()) {
+        alert('Please enter data to import');
+        return;
+      }
+      
+      if (!confirm('Are you sure you want to import the marks?')) return;
+      
+      const data = parseCSV(text);
+      const mapping = {
+        studentId: parseInt(document.getElementById('mapStudentId').value),
+        subject: parseInt(document.getElementById('mapSubject').value),
+        examId: parseInt(document.getElementById('mapExamId').value),
+        marks: parseInt(document.getElementById('mapMarks').value)
+      };
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          const container = document.getElementById('marksUploadResults');
+          if (result.success) {
+            container.innerHTML = `
+              <div style="background: #dcfce7; padding: 16px; border-radius: 8px;">
+                <strong style="color: #15803d;">Import Complete!</strong>
+                <p style="margin-top: 8px;">Added: ${result.results.created} | Failed: ${result.results.failed}</p>
+                ${result.results.lockedExams.length > 0 ? `
+                  <p style="margin-top: 8px; color: var(--danger);">Locked exams skipped: ${result.results.lockedExams.map(e => e.examName).join(', ')}</p>
+                ` : ''}
+              </div>
+            `;
+            document.getElementById('bulkMarksData').value = '';
+            document.getElementById('marksUploadPreview').innerHTML = '';
+          } else {
+            container.innerHTML = `<p style="color: var(--danger);">${result.message}</p>`;
+          }
+        })
+        .adminBulkUploadMarks(data, mapping, { preview: false });
+    }
+    
+    // ================== REPORT CARD FUNCTIONS ==================
+    
+    function loadReportCardsPage() {
+      // Load exams dropdown
+      google.script.run
+        .withSuccessHandler(function(exams) {
+          const select = document.getElementById('reportExam');
+          select.innerHTML = '<option value="">All Exams</option>';
+          exams.forEach(exam => {
+            select.innerHTML += `<option value="${exam.examId}">${exam.name}</option>`;
+          });
+        })
+        .getExams();
+      
+      // Load students dropdown
+      google.script.run
+        .withSuccessHandler(function(students) {
+          const select = document.getElementById('reportStudent');
+          select.innerHTML = '<option value="">Select Student</option>';
+          students.forEach(s => {
+            select.innerHTML += `<option value="${s.studentId}">${s.name} (${s.class}${s.section} - Roll ${s.rollNo})</option>`;
+          });
+        })
+        .getStudents({ status: 'Active' });
+    }
+    
+    function generateClassReports() {
+      const classNum = document.getElementById('reportClass').value;
+      const section = document.getElementById('reportSection').value;
+      const examId = document.getElementById('reportExam').value;
+      
+      if (!classNum) {
+        alert('Please select a class');
+        return;
+      }
+      
+      const container = document.getElementById('reportCardResults');
+      container.innerHTML = '<div class="loading"><div class="spinner"></div><p style="margin-top: 12px;">Generating report cards... This may take a while.</p></div>';
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            container.innerHTML = `
+              <div style="background: #dcfce7; padding: 16px; border-radius: 8px;">
+                <strong style="color: #15803d;">Report Cards Generated!</strong>
+                <p style="margin-top: 8px;">${result.message}</p>
+                <a href="${result.folderUrl}" target="_blank" class="btn btn-primary" style="margin-top: 12px; display: inline-block; text-decoration: none;">
+                  Open Folder in Google Drive
+                </a>
+                ${result.files.length > 0 ? `
+                  <details style="margin-top: 12px;">
+                    <summary style="cursor: pointer;">View Generated Files (${result.files.length})</summary>
+                    <ul style="margin-top: 8px; font-size: 12px;">
+                      ${result.files.map(f => `<li><a href="${f.url}" target="_blank">${f.fileName}</a></li>`).join('')}
+                    </ul>
+                  </details>
+                ` : ''}
+              </div>
+            `;
+          } else {
+            container.innerHTML = `<p style="color: var(--danger);">${result.message}</p>`;
+          }
+        })
+        .withFailureHandler(function(error) {
+          container.innerHTML = `<p style="color: var(--danger);">Error: ${error}</p>`;
+        })
+        .generateClassReportCardsPDF(classNum, section, examId);
+    }
+    
+    function generateSingleReport() {
+      const studentId = document.getElementById('reportStudent').value;
+      const examId = document.getElementById('reportExam').value;
+      
+      if (!studentId) {
+        alert('Please select a student');
+        return;
+      }
+      
+      const container = document.getElementById('reportCardResults');
+      container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            container.innerHTML = `
+              <div style="background: #dcfce7; padding: 16px; border-radius: 8px;">
+                <strong style="color: #15803d;">Report Card Generated!</strong>
+                <p style="margin-top: 8px;">${result.fileName}</p>
+                <a href="${result.fileUrl}" target="_blank" class="btn btn-primary" style="margin-top: 12px; display: inline-block; text-decoration: none;">
+                  Download PDF
+                </a>
+              </div>
+            `;
+          } else {
+            container.innerHTML = `<p style="color: var(--danger);">${result.message}</p>`;
+          }
+        })
+        .generateReportCardPDF(studentId, examId);
+    }
+    
+    // ================== ADMIN TOOLS FUNCTIONS ==================
+    
+    function loadPromotePage() {
+      google.script.run
+        .withSuccessHandler(function(settings) {
+          if (settings.AcademicYear) {
+            document.getElementById('promoteFromYear').value = settings.AcademicYear;
+          }
+        })
+        .getSchoolSettings();
+    }
+    
+    function promoteAllStudents() {
+      const fromYear = document.getElementById('promoteFromYear').value;
+      const toYear = document.getElementById('promoteToYear').value;
+      
+      if (!toYear) {
+        alert('Please enter the new academic year');
+        return;
+      }
+      
+      if (!confirm(`Are you sure you want to promote ALL students from ${fromYear} to ${toYear}? This action cannot be undone.`)) {
+        return;
+      }
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          const container = document.getElementById('promoteResults');
+          if (result.success) {
+            container.innerHTML = `
+              <div style="background: #dcfce7; padding: 16px; border-radius: 8px;">
+                <strong style="color: #15803d;">Promotion Complete!</strong>
+                <p style="margin-top: 8px;">Promoted: ${result.promoted} students</p>
+                <p>Graduated (Class 12 → Alumni): ${result.graduated} students</p>
+              </div>
+            `;
+          } else {
+            container.innerHTML = `<p style="color: var(--danger);">${result.message}</p>`;
+          }
+        })
+        .promoteStudents(fromYear, toYear);
+    }
+    
+    function archiveYearDataUI() {
+      const year = document.getElementById('archiveYear').value;
+      
+      if (!year) {
+        alert('Please enter the academic year to archive');
+        return;
+      }
+      
+      if (!confirm(`Are you sure you want to archive data for ${year}?`)) {
+        return;
+      }
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          const container = document.getElementById('archiveResults');
+          if (result.success) {
+            container.innerHTML = `
+              <div style="background: #dcfce7; padding: 16px; border-radius: 8px;">
+                <strong style="color: #15803d;">Archive Complete!</strong>
+                <p style="margin-top: 8px;">${result.message}</p>
+              </div>
+            `;
+          } else {
+            container.innerHTML = `<p style="color: var(--danger);">${result.message}</p>`;
+          }
+        })
+        .archiveYearData(year);
+    }
   </script>
 </body>
 </html>
