@@ -1717,8 +1717,41 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
     
     // Initialize on load
     document.addEventListener('DOMContentLoaded', function() {
-      initializeDashboard();
+      checkAccessAndInit();
     });
+    
+    function checkAccessAndInit() {
+      google.script.run
+        .withSuccessHandler(function(access) {
+          if (!access.registered) {
+            showAccessDenied(access.message);
+          } else {
+            initializeDashboard();
+          }
+        })
+        .withFailureHandler(function(error) {
+          showAccessDenied("Error checking access: " + error);
+        })
+        .checkUserAccess();
+    }
+    
+    function showAccessDenied(message) {
+      document.querySelector('.sidebar').style.display = 'none';
+      document.querySelector('.main-content').innerHTML = `
+        <div style="display: flex; align-items: center; justify-content: center; height: 100vh; flex-direction: column;">
+          <div style="background: white; padding: 40px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); text-align: center; max-width: 500px;">
+            <div style="width: 80px; height: 80px; background: #fee2e2; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" fill="none" viewBox="0 0 24 24" stroke="#dc2626">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+            <h2 style="color: #dc2626; margin-bottom: 12px;">Access Denied</h2>
+            <p style="color: #666; line-height: 1.6;">${message}</p>
+            <p style="color: #999; font-size: 13px; margin-top: 20px;">Please contact the school administrator to get access.</p>
+          </div>
+        </div>
+      `;
+    }
     
     function initializeDashboard() {
       loadUserInfo();
