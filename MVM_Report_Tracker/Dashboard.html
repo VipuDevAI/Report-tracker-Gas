@@ -2714,24 +2714,17 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
               <div style="background: #dcfce7; padding: 16px; border-radius: 8px;">
                 <strong style="color: #15803d;">Import Complete!</strong>
                 <p style="margin-top: 8px;">Created: ${result.results.created} | Updated: ${result.results.updated} | Failed: ${result.results.failed}</p>
+                <p style="margin-top: 8px; font-size: 13px; color: #666;">Teachers can now login using their Google accounts.</p>
+                ${result.results.errors.length > 0 ? `
+                  <details style="margin-top: 8px;">
+                    <summary style="cursor: pointer; color: var(--danger);">View Errors (${result.results.errors.length})</summary>
+                    <ul style="margin-top: 8px; font-size: 12px;">
+                      ${result.results.errors.map(e => '<li>Row ' + e.row + ': ' + e.error + '</li>').join('')}
+                    </ul>
+                  </details>
+                ` : ''}
               </div>
             `;
-            
-            // Show credentials for download
-            if (result.credentials && result.credentials.length > 0) {
-              const credContainer = document.getElementById('teacherCredentials');
-              const csvContent = "Teacher ID,Name,Email,Password,Status\\n" + 
-                result.credentials.map(c => `${c.teacherId},${c.name},${c.email},${c.password},${c.status}`).join('\\n');
-              
-              credContainer.innerHTML = `
-                <div style="background: #dbeafe; padding: 16px; border-radius: 8px; margin-top: 16px;">
-                  <strong style="color: #1d4ed8;">Teacher Credentials</strong>
-                  <p style="margin-top: 8px; font-size: 13px;">Download credentials to share with teachers. Passwords are auto-generated.</p>
-                  <button class="btn btn-primary" style="margin-top: 12px;" onclick="downloadCredentials()">Download Credentials CSV</button>
-                  <textarea id="credentialsData" style="display:none;">${csvContent}</textarea>
-                </div>
-              `;
-            }
             
             document.getElementById('bulkTeacherData').value = '';
             document.getElementById('teacherUploadPreview').innerHTML = '';
@@ -2740,17 +2733,6 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
           }
         })
         .bulkUploadTeachers(data, { updateExisting: updateExisting, preview: false });
-    }
-    
-    // Download credentials CSV
-    function downloadCredentials() {
-      const csvContent = document.getElementById('credentialsData').value;
-      const blob = new Blob([csvContent], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'teacher_credentials.csv';
-      a.click();
     }
     
     // Preview marks upload
