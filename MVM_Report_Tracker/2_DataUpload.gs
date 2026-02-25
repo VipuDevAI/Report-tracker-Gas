@@ -534,7 +534,7 @@ function replaceTeachers(data) {
 
 
 /**
- * Add single teacher
+ * Add single teacher (Google email-based auth)
  * @param {Object} teacher - Teacher data object
  * @returns {Object} Result object
  */
@@ -547,10 +547,18 @@ function addTeacher(teacher) {
     return { success: false, message: "Name is required." };
   }
   
+  if (!teacher.email) {
+    return { success: false, message: "Email is required (used for Google login)." };
+  }
+  
+  // Check if email already exists
+  const existingTeacher = getTeacherByEmail(teacher.email);
+  if (existingTeacher) {
+    return { success: false, message: "A teacher with this email already exists." };
+  }
+  
   const sheet = SpreadsheetApp.getActive().getSheetByName("Teachers");
   const teacherId = `TCH${Date.now()}`;
-  const password = teacher.password || generatePassword(8);
-  const hashedPassword = hashPassword(password);
   
   sheet.appendRow([
     teacherId,
@@ -558,25 +566,18 @@ function addTeacher(teacher) {
     teacher.subject || "",
     teacher.classes || "",
     teacher.sections || "",
-    teacher.email || "",
+    teacher.email,
     teacher.phone || "",
     new Date(),
-    "Active",
-    hashedPassword
+    "Active"
   ]);
   
-  logAction("Add Teacher", `Added teacher: ${teacher.name}`);
+  logAction("Add Teacher", `Added teacher: ${teacher.name} (${teacher.email})`);
   
   return { 
     success: true, 
-    message: "Teacher added successfully!", 
-    teacherId: teacherId,
-    credentials: {
-      teacherId: teacherId,
-      name: teacher.name,
-      email: teacher.email,
-      password: password  // Return plain password once
-    }
+    message: "Teacher added successfully! They can now login using their Google account.", 
+    teacherId: teacherId
   };
 }
 
