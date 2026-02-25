@@ -48,7 +48,7 @@ function initializeApp() {
     ],
     Teachers: [
       "TeacherID", "Name", "Subject", "Classes", "Sections", 
-      "Email", "Phone", "JoinDate", "Status", "PasswordHash"
+      "Email", "Phone", "JoinDate", "Status"
     ],
     Subjects: [
       "SubjectID", "SubjectName", "SubjectCode", "Class", "Stream", 
