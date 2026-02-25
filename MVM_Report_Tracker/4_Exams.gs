@@ -1,17 +1,18 @@
 /************************************************
  MVM REPORT TRACKER - EXAM MANAGEMENT
  File 4 of 7
+ With Academic Year Support
 ************************************************/
 
 /**
- * Create a new exam
+ * Create a new exam (Admin only)
  * @param {Object} examData - Exam details
  * @returns {Object} Result object
  */
 function createExam(examData) {
   // Validate admin access
   if (!isAdmin()) {
-    return { success: false, message: "Access denied. Admin privileges required." };
+    return { success: false, message: "Access denied. Admin privileges required to create exams." };
   }
   
   // Validate input
@@ -29,6 +30,7 @@ function createExam(examData) {
   
   const sheet = SpreadsheetApp.getActive().getSheetByName("Exams");
   const examId = `EXM${Date.now()}`;
+  const academicYear = getCurrentAcademicYear();
   
   sheet.appendRow([
     examId,
@@ -41,10 +43,11 @@ function createExam(examData) {
     examData.endDate || new Date(),
     false,  // Not locked
     getCurrentUser(),
-    new Date()
+    new Date(),
+    academicYear  // Academic year field
   ]);
   
-  logAction("Create Exam", `Created exam: ${examData.name} (${examId})`);
+  logAction("Create Exam", `Created exam: ${examData.name} (${examId}) for ${academicYear}`);
   
   return { 
     success: true, 
@@ -62,6 +65,7 @@ function createExam(examData) {
 function getExams(filters) {
   const sheet = SpreadsheetApp.getActive().getSheetByName("Exams");
   const data = sheet.getDataRange().getValues();
+  const currentYear = getCurrentAcademicYear();
   
   if (data.length <= 1) return [];
   
@@ -76,7 +80,8 @@ function getExams(filters) {
     endDate: row[7],
     locked: row[8],
     createdBy: row[9],
-    createdAt: row[10]
+    createdAt: row[10],
+    academicYear: row[11] || currentYear
   }));
   
   if (filters) {
@@ -89,6 +94,15 @@ function getExams(filters) {
     if (filters.locked !== undefined) {
       exams = exams.filter(e => e.locked === filters.locked);
     }
+    if (filters.academicYear) {
+      exams = exams.filter(e => e.academicYear === filters.academicYear);
+    } else {
+      // Default: filter by current academic year
+      exams = exams.filter(e => e.academicYear === currentYear);
+    }
+  } else {
+    // Default: filter by current academic year
+    exams = exams.filter(e => e.academicYear === currentYear);
   }
   
   return exams;
@@ -101,13 +115,34 @@ function getExams(filters) {
  * @returns {Object|null} Exam object or null
  */
 function getExamById(examId) {
-  const exams = getExams();
-  return exams.find(e => e.examId === examId) || null;
+  const sheet = SpreadsheetApp.getActive().getSheetByName("Exams");
+  const data = sheet.getDataRange().getValues();
+  const currentYear = getCurrentAcademicYear();
+  
+  if (data.length <= 1) return null;
+  
+  const row = data.find(r => r[0] === examId);
+  if (!row) return null;
+  
+  return {
+    examId: row[0],
+    name: row[1],
+    examType: row[2],
+    class: row[3],
+    maxMarks: row[4],
+    weightage: row[5],
+    startDate: row[6],
+    endDate: row[7],
+    locked: row[8],
+    createdBy: row[9],
+    createdAt: row[10],
+    academicYear: row[11] || currentYear
+  };
 }
 
 
 /**
- * Update exam details
+ * Update exam details (Admin only)
  * @param {string} examId - Exam ID to update
  * @param {Object} updates - Fields to update
  * @returns {Object} Result object
@@ -144,10 +179,11 @@ function updateExam(examId, updates) {
     updates.endDate || row[7],
     row[8],  // Keep lock status
     row[9],
-    row[10]
+    row[10],
+    row[11]  // Keep academic year
   ];
   
-  sheet.getRange(rowIndex + 1, 1, 1, 11).setValues([updatedRow]);
+  sheet.getRange(rowIndex + 1, 1, 1, 12).setValues([updatedRow]);
   
   logAction("Update Exam", `Updated exam: ${examId}`);
   
@@ -156,13 +192,13 @@ function updateExam(examId, updates) {
 
 
 /**
- * Lock an exam (prevents marks modification)
+ * Lock an exam (Admin only - prevents marks modification)
  * @param {string} examId - Exam ID to lock
  * @returns {Object} Result object
  */
 function lockExam(examId) {
   if (!isAdmin()) {
-    return { success: false, message: "Access denied. Admin privileges required." };
+    return { success: false, message: "Access denied. Admin privileges required to lock exams." };
   }
   
   const sheet = SpreadsheetApp.getActive().getSheetByName("Exams");
@@ -183,13 +219,13 @@ function lockExam(examId) {
 
 
 /**
- * Unlock an exam
+ * Unlock an exam (Admin only)
  * @param {string} examId - Exam ID to unlock
  * @returns {Object} Result object
  */
 function unlockExam(examId) {
   if (!isAdmin()) {
-    return { success: false, message: "Access denied. Admin privileges required." };
+    return { success: false, message: "Access denied. Admin privileges required to unlock exams." };
   }
   
   const sheet = SpreadsheetApp.getActive().getSheetByName("Exams");
@@ -210,13 +246,13 @@ function unlockExam(examId) {
 
 
 /**
- * Delete an exam (and associated marks)
+ * Delete an exam and associated marks (Admin only)
  * @param {string} examId - Exam ID to delete
  * @returns {Object} Result object
  */
 function deleteExam(examId) {
   if (!isAdmin()) {
-    return { success: false, message: "Access denied. Admin privileges required." };
+    return { success: false, message: "Access denied. Admin privileges required to delete exams." };
   }
   
   const ss = SpreadsheetApp.getActive();
@@ -288,4 +324,13 @@ function getExamTypes() {
  */
 function getMaxMarksOptions() {
   return [10, 20, 25, 30, 40, 50, 70, 80, 100];
+}
+
+
+/**
+ * Get exams for current academic year (for dropdown)
+ * @returns {Array} Current year exams
+ */
+function getCurrentYearExams() {
+  return getExams({ academicYear: getCurrentAcademicYear() });
 }
