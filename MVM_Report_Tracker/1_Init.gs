@@ -59,12 +59,12 @@ function initializeApp() {
     ],
     Exams: [
       "ExamID", "ExamName", "ExamType", "Class", "MaxMarks", 
-      "Weightage", "StartDate", "EndDate", "Locked", "CreatedBy", "CreatedAt"
+      "Weightage", "StartDate", "EndDate", "Locked", "CreatedBy", "CreatedAt", "AcademicYear"
     ],
     Marks_Master: [
       "EntryID", "StudentID", "StudentName", "Subject", "SubjectCode",
       "TeacherID", "TeacherName", "ExamID", "ExamName", "Class", "Section",
-      "MaxMarks", "MarksObtained", "Percentage", "Grade", "UpdatedAt", "UpdatedBy"
+      "MaxMarks", "MarksObtained", "Percentage", "Grade", "UpdatedAt", "UpdatedBy", "AcademicYear"
     ],
     Settings_Ranges: [
       "RangeName", "GradeLabel", "MinMarks", "MaxMarks", "Color"
