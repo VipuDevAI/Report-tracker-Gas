@@ -1821,6 +1821,41 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
     let charts = {};
     let currentFilters = {};
     
+    // Section configurations by class
+    const SECTIONS_9_10 = ["A", "B", "C", "D"];
+    const SECTIONS_11_12 = ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11", "A12"];
+    
+    /**
+     * Get sections for a specific class
+     * @param {string|number} classNum - Class number
+     * @returns {Array} Sections array
+     */
+    function getSectionsForClass(classNum) {
+      const cls = parseInt(classNum);
+      if (cls === 11 || cls === 12) {
+        return SECTIONS_11_12;
+      }
+      return SECTIONS_9_10;
+    }
+    
+    /**
+     * Update a section dropdown based on selected class
+     * @param {string} sectionSelectId - ID of the section select element
+     * @param {string} classNum - Selected class number
+     * @param {boolean} includeAll - Whether to include "All" option
+     */
+    function updateSectionDropdown(sectionSelectId, classNum, includeAll = true) {
+      const select = document.getElementById(sectionSelectId);
+      if (!select) return;
+      
+      const sections = classNum ? getSectionsForClass(classNum) : SECTIONS_9_10;
+      
+      select.innerHTML = includeAll ? '<option value="">All Sections</option>' : '<option value="">Select</option>';
+      sections.forEach(sec => {
+        select.innerHTML += `<option value="${sec}">${sec}</option>`;
+      });
+    }
+    
     // Initialize on load
     document.addEventListener('DOMContentLoaded', function() {
       checkAccessAndInit();
