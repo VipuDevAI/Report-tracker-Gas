@@ -10,7 +10,7 @@
    
  APP ADMINS (can use admin features, NOT see code):
    → rishisans83@gmail.com
-   → mvmseniors26@gmail.com
+   → mvmseniors@gmail.com
    → Other school admins added below
    
  TEACHERS (filtered access via web app):
