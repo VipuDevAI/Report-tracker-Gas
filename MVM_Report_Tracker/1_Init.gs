@@ -230,7 +230,12 @@ function seedDefaultSubjects() {
     ["SUB028", "Business Studies", "BS", "11,12", "Commerce", 100, 40, true],
     ["SUB029", "Economics", "ECO", "11,12", "Commerce", 100, 40, true],
     ["SUB030", "English", "ENG", "11,12", "Commerce", 100, 40, true],
-    ["SUB031", "Mathematics", "MATH", "11,12", "Commerce", 100, 40, true]
+    ["SUB031", "Mathematics", "MATH", "11,12", "Commerce", 100, 40, true],
+    
+    // Class 11 & 12 - CORE SUBJECTS (All Streams)
+    ["SUB032", "Hindi", "HIN", "11,12", "All", 100, 40, true],
+    ["SUB033", "History", "HIST", "11,12", "All", 100, 40, true],
+    ["SUB034", "Sanskrit", "SANS", "11,12", "All", 100, 40, true]
   ];
 
   if (sheet.getLastRow() <= 1) {
