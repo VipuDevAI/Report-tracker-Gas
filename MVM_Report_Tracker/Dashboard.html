@@ -1748,7 +1748,7 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
         </div>
         <div class="form-group">
           <label class="form-label">Class *</label>
-          <select class="form-input" id="newStudentClass" required>
+          <select class="form-input" id="newStudentClass" required onchange="updateSectionDropdown('newStudentSection', this.value, false)">
             <option value="9">9</option>
             <option value="10">10</option>
             <option value="11">11</option>
