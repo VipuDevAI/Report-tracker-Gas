@@ -819,7 +819,7 @@
         </div>
         <div class="filter-group">
           <span class="filter-label">Class</span>
-          <select class="filter-select" id="filterClass" onchange="applyFilters()">
+          <select class="filter-select" id="filterClass" onchange="updateSectionDropdown('filterSection', this.value); applyFilters()">
             <option value="">All Classes</option>
             <option value="9">Class 9</option>
             <option value="10">Class 10</option>
