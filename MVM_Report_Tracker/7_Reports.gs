@@ -585,6 +585,178 @@ function generateClassReport(classNum, section, examId) {
 
 
 /**
+ * Download class-wise marks report for an exam (Admin only)
+ * Format: Student | Roll | Subject1 | Subject2 | Subject3... | Total | %
+ * @param {string} classNum - Class number
+ * @param {string} section - Section
+ * @param {string} examId - Exam ID
+ * @returns {Object} Result with download URL
+ */
+function downloadClassExamMarks(classNum, section, examId) {
+  if (!isAdmin()) {
+    return { success: false, message: "Access denied. Admin privileges required." };
+  }
+  
+  if (!classNum || !examId) {
+    return { success: false, message: "Class and Exam are required." };
+  }
+  
+  // Get exam details
+  const exam = getExamById(examId);
+  if (!exam) {
+    return { success: false, message: "Exam not found." };
+  }
+  
+  // Get students for the class
+  const studentsSheet = SpreadsheetApp.getActive().getSheetByName("Students");
+  const studentsData = studentsSheet.getDataRange().getValues();
+  
+  let students = studentsData.slice(1)
+    .filter(row => row[2] == classNum && row[9] === "Active")
+    .map(row => ({
+      studentId: row[0],
+      name: row[1],
+      rollNo: row[5],
+      section: row[3]
+    }));
+  
+  if (section) {
+    students = students.filter(s => s.section === section);
+  }
+  
+  // Sort by roll number
+  students.sort((a, b) => a.rollNo - b.rollNo);
+  
+  // Get marks for this exam
+  const marksSheet = SpreadsheetApp.getActive().getSheetByName("Marks_Master");
+  const marksData = marksSheet.getDataRange().getValues();
+  
+  const examMarks = marksData.slice(1)
+    .filter(row => row[7] === examId && row[9] == classNum)
+    .filter(row => !section || row[10] === section);
+  
+  // Get unique subjects
+  const subjects = [...new Set(examMarks.map(m => m[3]))].sort();
+  
+  if (subjects.length === 0) {
+    return { success: false, message: "No marks found for this exam and class." };
+  }
+  
+  // Build marks index: studentId -> { subject: marks }
+  const marksIndex = {};
+  examMarks.forEach(row => {
+    const studentId = row[1];
+    const subject = row[3];
+    const marks = row[12];
+    const maxMarks = row[11];
+    
+    if (!marksIndex[studentId]) {
+      marksIndex[studentId] = {};
+    }
+    marksIndex[studentId][subject] = { marks: marks, max: maxMarks };
+  });
+  
+  // Create spreadsheet
+  const ss = SpreadsheetApp.create(`${exam.name}_Class${classNum}${section || ''}_Marks_${Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyyMMdd")}`);
+  const sheet = ss.getActiveSheet();
+  sheet.setName("Marks Report");
+  
+  // Headers
+  const headers = ["Roll No", "Student Name", ...subjects, "Total", "Max", "Percentage", "Range"];
+  sheet.appendRow(headers);
+  
+  // Format header
+  const headerRange = sheet.getRange(1, 1, 1, headers.length);
+  headerRange.setFontWeight("bold");
+  headerRange.setBackground("#1a6b3a");
+  headerRange.setFontColor("#ffffff");
+  
+  // Data rows
+  const dataRows = [];
+  students.forEach(student => {
+    const studentMarks = marksIndex[student.studentId] || {};
+    let total = 0;
+    let maxTotal = 0;
+    
+    const row = [student.rollNo, student.name];
+    
+    subjects.forEach(subject => {
+      if (studentMarks[subject]) {
+        row.push(studentMarks[subject].marks);
+        total += studentMarks[subject].marks;
+        maxTotal += studentMarks[subject].max;
+      } else {
+        row.push("-");
+      }
+    });
+    
+    const percentage = maxTotal > 0 ? ((total / maxTotal) * 100).toFixed(2) : 0;
+    const range = calculateGrade(parseFloat(percentage));
+    
+    row.push(total > 0 ? total : "-");
+    row.push(maxTotal > 0 ? maxTotal : "-");
+    row.push(total > 0 ? percentage + "%" : "-");
+    row.push(total > 0 ? range : "-");
+    
+    dataRows.push(row);
+  });
+  
+  if (dataRows.length > 0) {
+    sheet.getRange(2, 1, dataRows.length, headers.length).setValues(dataRows);
+  }
+  
+  // Add summary row
+  const summaryRow = sheet.getLastRow() + 2;
+  sheet.getRange(summaryRow, 1).setValue("Class Summary");
+  sheet.getRange(summaryRow, 1).setFontWeight("bold");
+  
+  // Calculate class averages per subject
+  const avgRow = ["", "Class Average"];
+  subjects.forEach((subject, idx) => {
+    const subjectMarks = dataRows
+      .map(r => r[2 + idx])
+      .filter(m => m !== "-");
+    const avg = subjectMarks.length > 0 
+      ? (subjectMarks.reduce((a, b) => a + b, 0) / subjectMarks.length).toFixed(1)
+      : "-";
+    avgRow.push(avg);
+  });
+  avgRow.push("", "", "", "");
+  sheet.getRange(summaryRow + 1, 1, 1, avgRow.length).setValues([avgRow]);
+  
+  // Auto-resize columns
+  for (let i = 1; i <= headers.length; i++) {
+    sheet.autoResizeColumn(i);
+  }
+  
+  // Add exam info
+  const infoRow = summaryRow + 3;
+  sheet.getRange(infoRow, 1).setValue("Exam: " + exam.name);
+  sheet.getRange(infoRow + 1, 1).setValue("Class: " + classNum + (section ? "-" + section : " (All Sections)"));
+  sheet.getRange(infoRow + 2, 1).setValue("Max Marks per Subject: " + exam.maxMarks);
+  sheet.getRange(infoRow + 3, 1).setValue("Generated: " + new Date().toLocaleString());
+  
+  logAction("Download Class Marks", `${exam.name} - Class ${classNum}${section || ''}`);
+  
+  return {
+    success: true,
+    url: ss.getUrl(),
+    fileName: ss.getName(),
+    message: `Report generated for ${students.length} students, ${subjects.length} subjects`
+  };
+}
+
+
+/**
+ * Get available exams for download dropdown
+ * @returns {Array} Exams list
+ */
+function getExamsForDownload() {
+  return getExams();
+}
+
+
+/**
  * Export marks data to CSV format
  * @param {Object} filters - Optional filters
  * @returns {string} CSV string
