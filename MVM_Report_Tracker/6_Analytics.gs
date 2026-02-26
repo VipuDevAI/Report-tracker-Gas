@@ -233,7 +233,7 @@ function getSubjectPerformance(filters) {
         count: 0,
         passed: 0,
         failed: 0,
-        grades: { "A+": 0, "A": 0, "B+": 0, "B": 0, "C": 0, "D": 0, "F": 0 }
+        ranges: { "91-100": 0, "81-90": 0, "71-80": 0, "61-70": 0, "51-60": 0, "41-50": 0, "0-40": 0 }
       };
     }
     subjectMap[m.subject].totalPercentage += m.percentage;
@@ -243,9 +243,14 @@ function getSubjectPerformance(filters) {
     } else {
       subjectMap[m.subject].failed++;
     }
-    if (subjectMap[m.subject].grades[m.grade] !== undefined) {
-      subjectMap[m.subject].grades[m.grade]++;
-    }
+    // Count by range
+    if (m.percentage >= 91) subjectMap[m.subject].ranges["91-100"]++;
+    else if (m.percentage >= 81) subjectMap[m.subject].ranges["81-90"]++;
+    else if (m.percentage >= 71) subjectMap[m.subject].ranges["71-80"]++;
+    else if (m.percentage >= 61) subjectMap[m.subject].ranges["61-70"]++;
+    else if (m.percentage >= 51) subjectMap[m.subject].ranges["51-60"]++;
+    else if (m.percentage >= 41) subjectMap[m.subject].ranges["41-50"]++;
+    else subjectMap[m.subject].ranges["0-40"]++;
   });
   
   return Object.values(subjectMap).map(s => ({
