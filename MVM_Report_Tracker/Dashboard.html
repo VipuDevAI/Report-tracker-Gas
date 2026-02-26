@@ -968,7 +968,7 @@
       <div class="filters-bar">
         <div class="filter-group">
           <span class="filter-label">Class</span>
-          <select class="filter-select" id="studentFilterClass" onchange="loadStudents()">
+          <select class="filter-select" id="studentFilterClass" onchange="updateSectionDropdown('studentFilterSection', this.value); loadStudents()">
             <option value="">All</option>
             <option value="9">9</option>
             <option value="10">10</option>
