@@ -120,19 +120,19 @@ function initializeApp() {
 
 
 /**
- * Seed default grade ranges
+ * Seed default grade ranges (numeric only, no letter grades)
  */
 function seedDefaultRanges() {
   const sheet = SpreadsheetApp.getActive().getSheetByName("Settings_Ranges");
   
   const ranges = [
-    ["A+", "Excellent", 91, 100, "#22c55e"],
-    ["A", "Very Good", 81, 90, "#16a34a"],
-    ["B+", "Good", 71, 80, "#3b82f6"],
-    ["B", "Above Average", 61, 70, "#0ea5e9"],
-    ["C", "Average", 51, 60, "#f59e0b"],
-    ["D", "Below Average", 41, 50, "#f97316"],
-    ["F", "Fail", 0, 40, "#ef4444"]
+    ["91-100", "Excellent", 91, 100, "#22c55e"],
+    ["81-90", "Very Good", 81, 90, "#16a34a"],
+    ["71-80", "Good", 71, 80, "#3b82f6"],
+    ["61-70", "Above Average", 61, 70, "#0ea5e9"],
+    ["51-60", "Average", 51, 60, "#f59e0b"],
+    ["41-50", "Below Average", 41, 50, "#f97316"],
+    ["0-40", "Needs Improvement", 0, 40, "#ef4444"]
   ];
 
   if (sheet.getLastRow() <= 1) {
