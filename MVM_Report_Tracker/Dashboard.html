@@ -2317,7 +2317,7 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
               <td>${s.avgPercentage}%</td>
               <td>${s.passRate}%</td>
               <td>${s.count}</td>
-              <td>${Object.keys(s.grades).filter(g => s.grades[g] > 0)[0] || '-'}</td>
+              <td>${s.ranges ? s.ranges["91-100"] || 0 : 0}</td>
             </tr>
           `).join('');
         })
