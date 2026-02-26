@@ -253,12 +253,27 @@ function seedDefaultClasses() {
   const classes = [];
   const streams = ["Science", "Computer Science", "Commerce"];
   
-  for (let cls = 9; cls <= 12; cls++) {
+  // Class 9 & 10 with sections A, B, C, D
+  for (let cls = 9; cls <= 10; cls++) {
     streams.forEach((stream, idx) => {
       classes.push([
         `CLS${cls}${idx + 1}`,
         `Class ${cls}`,
         "A,B,C,D",
+        stream,
+        "2024-2025",
+        true
+      ]);
+    });
+  }
+  
+  // Class 11 & 12 with sections A1-A12
+  for (let cls = 11; cls <= 12; cls++) {
+    streams.forEach((stream, idx) => {
+      classes.push([
+        `CLS${cls}${idx + 1}`,
+        `Class ${cls}`,
+        "A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12",
         stream,
         "2024-2025",
         true
