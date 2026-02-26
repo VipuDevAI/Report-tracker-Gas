@@ -117,30 +117,10 @@ function rebuildAggregates() {
     aggregates.push(["RANGE_DIST", range, "", gradeDistribution[range], marks.length, now]);
   });
   
-  // Range distribution
-  const rangeDistribution = {
-    "91-100": 0,
-    "81-90": 0,
-    "71-80": 0,
-    "61-70": 0,
-    "51-60": 0,
-    "41-50": 0,
-    "0-40": 0
-  };
-  
-  marks.forEach(row => {
-    const percentage = parseFloat(row[13]);
-    if (percentage >= 91) rangeDistribution["91-100"]++;
-    else if (percentage >= 81) rangeDistribution["81-90"]++;
-    else if (percentage >= 71) rangeDistribution["71-80"]++;
-    else if (percentage >= 61) rangeDistribution["61-70"]++;
-    else if (percentage >= 51) rangeDistribution["51-60"]++;
-    else if (percentage >= 41) rangeDistribution["41-50"]++;
-    else rangeDistribution["0-40"]++;
-  });
+  // Range distribution (removed - already covered above)
   
   Object.keys(rangeDistribution).forEach(range => {
-    aggregates.push(["RANGE_DIST", range, "", rangeDistribution[range], marks.length, now]);
+    aggregates.push(["SCORE_RANGE", range, "", rangeDistribution[range], marks.length, now]);
   });
   
   // Write aggregates
