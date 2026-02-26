@@ -307,35 +307,35 @@ function getStudentMarksSummary(studentId) {
 
 
 /**
- * Calculate grade based on percentage
+ * Calculate grade range based on percentage (numeric ranges only)
  * @param {number} percentage - Percentage value
- * @returns {string} Grade
+ * @returns {string} Range (e.g., "91-100", "81-90")
  */
 function calculateGrade(percentage) {
-  if (percentage >= 91) return "A+";
-  if (percentage >= 81) return "A";
-  if (percentage >= 71) return "B+";
-  if (percentage >= 61) return "B";
-  if (percentage >= 51) return "C";
-  if (percentage >= 41) return "D";
-  return "F";
+  if (percentage >= 91) return "91-100";
+  if (percentage >= 81) return "81-90";
+  if (percentage >= 71) return "71-80";
+  if (percentage >= 61) return "61-70";
+  if (percentage >= 51) return "51-60";
+  if (percentage >= 41) return "41-50";
+  return "0-40";
 }
 
 
 /**
- * Get grade color
- * @param {string} grade - Grade string
+ * Get grade color based on range
+ * @param {string} grade - Grade range string
  * @returns {string} Color hex code
  */
 function getGradeColor(grade) {
   const colors = {
-    "A+": "#22c55e",
-    "A": "#16a34a",
-    "B+": "#3b82f6",
-    "B": "#0ea5e9",
-    "C": "#f59e0b",
-    "D": "#f97316",
-    "F": "#ef4444"
+    "91-100": "#22c55e",
+    "81-90": "#16a34a",
+    "71-80": "#3b82f6",
+    "61-70": "#0ea5e9",
+    "51-60": "#f59e0b",
+    "41-50": "#f97316",
+    "0-40": "#ef4444"
   };
   return colors[grade] || "#6b7280";
 }
