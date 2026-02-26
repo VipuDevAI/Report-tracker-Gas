@@ -1547,7 +1547,7 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
         <div class="filters-bar" style="padding: 0; box-shadow: none;">
           <div class="filter-group">
             <span class="filter-label">Class *</span>
-            <select class="filter-select" id="reportClass">
+            <select class="filter-select" id="reportClass" onchange="updateSectionDropdown('reportSection', this.value)">
               <option value="">Select Class</option>
               <option value="9">Class 9</option>
               <option value="10">Class 10</option>
