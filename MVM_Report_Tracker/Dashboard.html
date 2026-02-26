@@ -3110,6 +3110,136 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
         })
         .archiveYearData(year);
     }
+    
+    // ================== DOWNLOAD MARKS FUNCTIONS ==================
+    
+    function loadDownloadMarksPage() {
+      // Load exams dropdown
+      google.script.run
+        .withSuccessHandler(function(exams) {
+          const select = document.getElementById('downloadExam');
+          select.innerHTML = '<option value="">Select Exam</option>';
+          exams.forEach(exam => {
+            select.innerHTML += `<option value="${exam.examId}">${exam.name} (${exam.examType})</option>`;
+          });
+        })
+        .getExams();
+    }
+    
+    function downloadMarksAsExcel() {
+      const examId = document.getElementById('downloadExam').value;
+      const classNum = document.getElementById('downloadClass').value;
+      const section = document.getElementById('downloadSection').value;
+      
+      if (!examId) {
+        alert('Please select an exam');
+        return;
+      }
+      
+      if (!classNum) {
+        alert('Please select a class');
+        return;
+      }
+      
+      const container = document.getElementById('downloadMarksResults');
+      container.innerHTML = '<div class="loading"><div class="spinner"></div><p style="margin-top: 12px;">Generating Excel spreadsheet...</p></div>';
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            container.innerHTML = `
+              <div style="background: #dcfce7; padding: 16px; border-radius: 8px;">
+                <strong style="color: #15803d;">Excel Spreadsheet Generated!</strong>
+                <p style="margin-top: 8px;">${result.message}</p>
+                <p style="margin-top: 4px; font-size: 13px; color: #666;">File: ${result.fileName}</p>
+                <a href="${result.url}" target="_blank" class="btn btn-primary" style="margin-top: 12px; display: inline-block; text-decoration: none;">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="margin-right: 8px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                  Open in Google Sheets
+                </a>
+                <p style="margin-top: 12px; font-size: 12px; color: #666;">
+                  Tip: From Google Sheets, you can download as .xlsx (Excel) via File > Download > Microsoft Excel (.xlsx)
+                </p>
+              </div>
+            `;
+          } else {
+            container.innerHTML = `
+              <div style="background: #fee2e2; padding: 16px; border-radius: 8px;">
+                <strong style="color: #dc2626;">Error</strong>
+                <p style="margin-top: 4px; color: #dc2626;">${result.message}</p>
+              </div>
+            `;
+          }
+        })
+        .withFailureHandler(function(error) {
+          container.innerHTML = `
+            <div style="background: #fee2e2; padding: 16px; border-radius: 8px;">
+              <strong style="color: #dc2626;">Error</strong>
+              <p style="margin-top: 4px; color: #dc2626;">${error}</p>
+            </div>
+          `;
+        })
+        .downloadClassExamMarks(classNum, section, examId);
+    }
+    
+    function downloadMarksAsCSV() {
+      const examId = document.getElementById('downloadExam').value;
+      const classNum = document.getElementById('downloadClass').value;
+      const section = document.getElementById('downloadSection').value;
+      
+      if (!examId) {
+        alert('Please select an exam');
+        return;
+      }
+      
+      if (!classNum) {
+        alert('Please select a class');
+        return;
+      }
+      
+      const container = document.getElementById('downloadMarksResults');
+      container.innerHTML = '<div class="loading"><div class="spinner"></div><p style="margin-top: 12px;">Generating CSV file...</p></div>';
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            // Trigger CSV download in browser
+            const csvContent = result.csvData;
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', result.fileName);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            container.innerHTML = `
+              <div style="background: #dcfce7; padding: 16px; border-radius: 8px;">
+                <strong style="color: #15803d;">CSV Downloaded!</strong>
+                <p style="margin-top: 8px;">${result.message}</p>
+                <p style="margin-top: 4px; font-size: 13px; color: #666;">File: ${result.fileName}</p>
+              </div>
+            `;
+          } else {
+            container.innerHTML = `
+              <div style="background: #fee2e2; padding: 16px; border-radius: 8px;">
+                <strong style="color: #dc2626;">Error</strong>
+                <p style="margin-top: 4px; color: #dc2626;">${result.message}</p>
+              </div>
+            `;
+          }
+        })
+        .withFailureHandler(function(error) {
+          container.innerHTML = `
+            <div style="background: #fee2e2; padding: 16px; border-radius: 8px;">
+              <strong style="color: #dc2626;">Error</strong>
+              <p style="margin-top: 4px; color: #dc2626;">${error}</p>
+            </div>
+          `;
+        })
+        .downloadClassExamMarksCSV(classNum, section, examId);
+    }
   </script>
 </body>
 </html>
