@@ -407,3 +407,17 @@ function openDashboard() {
   
   SpreadsheetApp.getUi().showModalDialog(html, 'MVM Report Tracker');
 }
+
+
+/**
+ * doGet - Entry point for Web App deployment
+ * This function is called when the web app URL is accessed
+ * @param {Object} e - Event parameter
+ * @returns {HtmlOutput} The dashboard HTML
+ */
+function doGet(e) {
+  return HtmlService.createHtmlOutputFromFile('Dashboard')
+    .setTitle('MVM Report Tracker')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
