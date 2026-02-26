@@ -100,17 +100,21 @@ function rebuildAggregates() {
     aggregates.push(["TEACHER_AVG", teacherId, stats.name, (stats.total / stats.count).toFixed(2), stats.count, now]);
   });
   
-  // Grade distribution
-  const gradeDistribution = { "A+": 0, "A": 0, "B+": 0, "B": 0, "C": 0, "D": 0, "F": 0 };
+  // Grade distribution (using numeric ranges)
+  const gradeDistribution = { "91-100": 0, "81-90": 0, "71-80": 0, "61-70": 0, "51-60": 0, "41-50": 0, "0-40": 0 };
   marks.forEach(row => {
-    const grade = row[14];
-    if (gradeDistribution[grade] !== undefined) {
-      gradeDistribution[grade]++;
-    }
+    const percentage = parseFloat(row[13]);
+    if (percentage >= 91) gradeDistribution["91-100"]++;
+    else if (percentage >= 81) gradeDistribution["81-90"]++;
+    else if (percentage >= 71) gradeDistribution["71-80"]++;
+    else if (percentage >= 61) gradeDistribution["61-70"]++;
+    else if (percentage >= 51) gradeDistribution["51-60"]++;
+    else if (percentage >= 41) gradeDistribution["41-50"]++;
+    else gradeDistribution["0-40"]++;
   });
   
-  Object.keys(gradeDistribution).forEach(grade => {
-    aggregates.push(["GRADE_DIST", grade, "", gradeDistribution[grade], marks.length, now]);
+  Object.keys(gradeDistribution).forEach(range => {
+    aggregates.push(["RANGE_DIST", range, "", gradeDistribution[range], marks.length, now]);
   });
   
   // Range distribution
