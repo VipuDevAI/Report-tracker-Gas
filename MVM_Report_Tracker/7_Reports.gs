@@ -748,6 +748,150 @@ function downloadClassExamMarks(classNum, section, examId) {
 
 
 /**
+ * Download class-wise marks as CSV (Admin only)
+ * Returns CSV string for client-side download
+ * @param {string} classNum - Class number
+ * @param {string} section - Section
+ * @param {string} examId - Exam ID
+ * @returns {Object} Result with CSV data
+ */
+function downloadClassExamMarksCSV(classNum, section, examId) {
+  if (!isAdmin()) {
+    return { success: false, message: "Access denied. Admin privileges required." };
+  }
+  
+  if (!classNum || !examId) {
+    return { success: false, message: "Class and Exam are required." };
+  }
+  
+  // Get exam details
+  const exam = getExamById(examId);
+  if (!exam) {
+    return { success: false, message: "Exam not found." };
+  }
+  
+  // Get students for the class
+  const studentsSheet = SpreadsheetApp.getActive().getSheetByName("Students");
+  const studentsData = studentsSheet.getDataRange().getValues();
+  
+  let students = studentsData.slice(1)
+    .filter(row => row[2] == classNum && row[9] === "Active")
+    .map(row => ({
+      studentId: row[0],
+      name: row[1],
+      rollNo: row[5],
+      section: row[3]
+    }));
+  
+  if (section) {
+    students = students.filter(s => s.section === section);
+  }
+  
+  // Sort by roll number
+  students.sort((a, b) => a.rollNo - b.rollNo);
+  
+  // Get marks for this exam
+  const marksSheet = SpreadsheetApp.getActive().getSheetByName("Marks_Master");
+  const marksData = marksSheet.getDataRange().getValues();
+  
+  const examMarks = marksData.slice(1)
+    .filter(row => row[7] === examId && row[9] == classNum)
+    .filter(row => !section || row[10] === section);
+  
+  // Get unique subjects
+  const subjects = [...new Set(examMarks.map(m => m[3]))].sort();
+  
+  if (subjects.length === 0) {
+    return { success: false, message: "No marks found for this exam and class." };
+  }
+  
+  // Build marks index: studentId -> { subject: marks }
+  const marksIndex = {};
+  examMarks.forEach(row => {
+    const studentId = row[1];
+    const subject = row[3];
+    const marks = row[12];
+    const maxMarks = row[11];
+    
+    if (!marksIndex[studentId]) {
+      marksIndex[studentId] = {};
+    }
+    marksIndex[studentId][subject] = { marks: marks, max: maxMarks };
+  });
+  
+  // Build CSV
+  const headers = ["Roll No", "Student Name", ...subjects, "Total", "Max", "Percentage", "Range"];
+  const csvRows = [headers.map(h => `"${h}"`).join(",")];
+  
+  students.forEach(student => {
+    const studentMarks = marksIndex[student.studentId] || {};
+    let total = 0;
+    let maxTotal = 0;
+    
+    const row = [`"${student.rollNo}"`, `"${student.name}"`];
+    
+    subjects.forEach(subject => {
+      if (studentMarks[subject]) {
+        row.push(studentMarks[subject].marks);
+        total += studentMarks[subject].marks;
+        maxTotal += studentMarks[subject].max;
+      } else {
+        row.push('"-"');
+      }
+    });
+    
+    const percentage = maxTotal > 0 ? ((total / maxTotal) * 100).toFixed(2) : 0;
+    const range = calculateGrade(parseFloat(percentage));
+    
+    row.push(total > 0 ? total : '"-"');
+    row.push(maxTotal > 0 ? maxTotal : '"-"');
+    row.push(total > 0 ? `"${percentage}%"` : '"-"');
+    row.push(total > 0 ? `"${range}"` : '"-"');
+    
+    csvRows.push(row.join(","));
+  });
+  
+  // Add summary row
+  csvRows.push("");
+  csvRows.push('"Class Summary"');
+  
+  // Calculate class averages per subject
+  const avgRow = ['""', '"Class Average"'];
+  subjects.forEach(subject => {
+    const subjectMarks = students
+      .map(s => marksIndex[s.studentId]?.[subject]?.marks)
+      .filter(m => m !== undefined);
+    const avg = subjectMarks.length > 0 
+      ? (subjectMarks.reduce((a, b) => a + b, 0) / subjectMarks.length).toFixed(1)
+      : "-";
+    avgRow.push(avg === "-" ? '"-"' : avg);
+  });
+  avgRow.push('""', '""', '""', '""');
+  csvRows.push(avgRow.join(","));
+  
+  // Add exam info
+  csvRows.push("");
+  csvRows.push(`"Exam: ${exam.name}"`);
+  csvRows.push(`"Class: ${classNum}${section ? '-' + section : ' (All Sections)'}"`);
+  csvRows.push(`"Max Marks per Subject: ${exam.maxMarks}"`);
+  csvRows.push(`"Generated: ${new Date().toLocaleString()}"`);
+  
+  const csvData = csvRows.join("\n");
+  const timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyyMMdd_HHmm");
+  const fileName = `${exam.name}_Class${classNum}${section || ''}_Marks_${timestamp}.csv`;
+  
+  logAction("Download CSV Marks", `${exam.name} - Class ${classNum}${section || ''}`);
+  
+  return {
+    success: true,
+    csvData: csvData,
+    fileName: fileName,
+    message: `CSV generated for ${students.length} students, ${subjects.length} subjects`
+  };
+}
+
+
+/**
  * Get available exams for download dropdown
  * @returns {Array} Exams list
  */
