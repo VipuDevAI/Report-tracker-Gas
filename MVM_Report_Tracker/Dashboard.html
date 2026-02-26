@@ -1121,7 +1121,7 @@
         </div>
         <div class="filter-group">
           <span class="filter-label">Class *</span>
-          <select class="filter-select" id="marksClass" onchange="loadStudentsForMarks()">
+          <select class="filter-select" id="marksClass" onchange="updateSectionDropdown('marksSection', this.value); loadStudentsForMarks()">
             <option value="">Select</option>
             <option value="9">9</option>
             <option value="10">10</option>
