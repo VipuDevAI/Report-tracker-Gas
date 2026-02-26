@@ -1955,10 +1955,10 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
       charts.range = new Chart(rangeCtx, {
         type: 'doughnut',
         data: { 
-          labels: ['91-100%', '81-90%', '71-80%', '61-70%', '51-60%', '41-50%', '0-40%'], 
+          labels: ['91-100', '81-90', '71-80', '61-70', '51-60', '41-50', '0-40'], 
           datasets: [{ data: [0,0,0,0,0,0,0], backgroundColor: ['#22c55e', '#16a34a', '#3b82f6', '#0ea5e9', '#f59e0b', '#f97316', '#ef4444'] }] 
         },
-        options: { responsive: true, maintainAspectRatio: false }
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
       });
       
       loadChartData();
