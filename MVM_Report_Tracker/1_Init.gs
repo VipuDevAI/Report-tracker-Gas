@@ -28,8 +28,25 @@ const STREAMS = {
   "12": ["Science", "Computer Science", "Commerce"]
 };
 
-// Class sections
+// Class sections - Different for 9-10 vs 11-12
+const SECTIONS_9_10 = ["A", "B", "C", "D"];
+const SECTIONS_11_12 = ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11", "A12"];
+
+// Legacy constant for backward compatibility
 const SECTIONS = ["A", "B", "C", "D"];
+
+/**
+ * Get sections for a specific class
+ * @param {string|number} classNum - Class number
+ * @returns {Array} Sections array
+ */
+function getSectionsForClass(classNum) {
+  const cls = parseInt(classNum);
+  if (cls === 11 || cls === 12) {
+    return SECTIONS_11_12;
+  }
+  return SECTIONS_9_10;
+}
 
 // Weak student threshold
 const WEAK_THRESHOLD = 40;
