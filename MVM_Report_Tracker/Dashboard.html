@@ -1638,6 +1638,100 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
         <div id="archiveResults" style="margin-top: 20px;"></div>
       </div>
     </div>
+    
+    <!-- Download Marks Page (Admin Only) -->
+    <div id="page-download-marks" class="page-view admin-only">
+      <div class="header">
+        <h1 class="page-title">Download Class-wise Marks</h1>
+      </div>
+      <div class="table-card">
+        <div style="background: #dbeafe; padding: 16px; border-radius: 8px; margin-bottom: 20px;">
+          <strong style="color: #1d4ed8;">Export Marksheet</strong>
+          <p style="color: #1e40af; margin-top: 4px; font-size: 13px;">
+            Download a complete class-wise marksheet for any exam. The report includes all subjects with marks for each student, totals, and percentages.
+          </p>
+        </div>
+        
+        <div class="filters-bar" style="padding: 0; box-shadow: none; margin-bottom: 20px;">
+          <div class="filter-group">
+            <span class="filter-label">Exam *</span>
+            <select class="filter-select" id="downloadExam" style="min-width: 200px;">
+              <option value="">Select Exam</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <span class="filter-label">Class *</span>
+            <select class="filter-select" id="downloadClass">
+              <option value="">Select Class</option>
+              <option value="9">Class 9</option>
+              <option value="10">Class 10</option>
+              <option value="11">Class 11</option>
+              <option value="12">Class 12</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <span class="filter-label">Section</span>
+            <select class="filter-select" id="downloadSection">
+              <option value="">All Sections</option>
+              <option value="A">A</option>
+              <option value="B">B</option>
+              <option value="C">C</option>
+              <option value="D">D</option>
+            </select>
+          </div>
+        </div>
+        
+        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+          <button class="btn btn-primary" onclick="downloadMarksAsExcel()" data-testid="download-excel-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            Download as Excel (Google Sheets)
+          </button>
+          <button class="btn btn-secondary" onclick="downloadMarksAsCSV()" data-testid="download-csv-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+            Download as CSV
+          </button>
+        </div>
+        
+        <div id="downloadMarksResults" style="margin-top: 24px;"></div>
+        
+        <div style="margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--border);">
+          <h4 style="margin-bottom: 12px;">Download Preview</h4>
+          <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px;">
+            The downloaded marksheet will include the following columns:
+          </p>
+          <div style="background: var(--bg-main); padding: 16px; border-radius: 8px; overflow-x: auto;">
+            <table style="min-width: 100%;">
+              <thead>
+                <tr>
+                  <th>Roll No</th>
+                  <th>Student Name</th>
+                  <th>Subject 1</th>
+                  <th>Subject 2</th>
+                  <th>...</th>
+                  <th>Total</th>
+                  <th>Max</th>
+                  <th>Percentage</th>
+                  <th>Range</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>1</td>
+                  <td>Student Name</td>
+                  <td>85</td>
+                  <td>92</td>
+                  <td>...</td>
+                  <td>450</td>
+                  <td>500</td>
+                  <td>90%</td>
+                  <td>81-90</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
   </main>
   
   <!-- Modals -->
