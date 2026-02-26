@@ -79,7 +79,7 @@
  └─────────────────────────────────────────────────┘
  
  ┌─────────────────────────────────────────────────┐
- │ APP ADMINS (mvmseniors26@gmail.com, etc.)      │
+ │ APP ADMINS (mvmseniors@gmail.com, etc.)        │
  │ ─────────────────────────────────────────────── │
  │ ✓ Full admin features IN THE APP               │
  │ ✓ Manage students, teachers, exams             │
