@@ -28,8 +28,8 @@
 // These users can manage students, teachers, exams, etc.
 // They CANNOT see or edit the code (unless given editor access separately)
 const ADMIN_EMAIL_LIST = [
-  "rishisans83@gmail.com",
-  "mvmseniors26@gmail.com"
+  "rishisans83@gmail.com",    // Owner (can also edit code)
+  "mvmseniors@gmail.com"      // Admin (app access only)
 ];
 
 /**
