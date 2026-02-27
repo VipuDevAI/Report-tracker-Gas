@@ -338,6 +338,73 @@ function getCurrentUserInfo() {
 
 
 /**
+ * Get user info by email (for login-based auth)
+ * @param {string} email - User email
+ * @returns {Object} User info object
+ */
+function getUserInfoByEmail(email) {
+  if (!email) {
+    return {
+      type: "unauthorized",
+      role: "unauthorized",
+      email: "",
+      name: "Unknown",
+      message: "No email provided",
+      hasAccess: false
+    };
+  }
+  
+  email = email.trim().toLowerCase();
+  
+  // Check if admin
+  const adminEmails = ADMIN_EMAIL_LIST.map(e => e.toLowerCase());
+  if (adminEmails.includes(email)) {
+    return {
+      type: "admin",
+      role: "admin",
+      email: email,
+      name: email.split("@")[0],
+      permissions: ["all"],
+      canManageMasterData: true,
+      canLockExams: true,
+      canViewAllData: true,
+      hasAccess: true
+    };
+  }
+  
+  // Check if teacher
+  const teacher = getTeacherByEmail(email);
+  if (teacher) {
+    const assignment = getTeacherAssignment(email);
+    return {
+      type: "teacher",
+      role: "teacher",
+      email: email,
+      name: teacher.name || email.split("@")[0],
+      teacherId: assignment ? assignment.teacherId : null,
+      subject: assignment ? assignment.subject : null,
+      classes: assignment ? assignment.classes : [],
+      sections: assignment ? assignment.sections : [],
+      permissions: ["view_own_data", "enter_marks", "view_students"],
+      canManageMasterData: false,
+      canLockExams: false,
+      canViewAllData: false,
+      hasAccess: true
+    };
+  }
+  
+  return {
+    type: "unauthorized",
+    role: "unauthorized",
+    email: email,
+    name: email.split("@")[0],
+    message: "Access Denied - Email not registered",
+    hasAccess: false
+  };
+}
+
+
+/**
  * Check if user has specific permission
  * @param {string} permission - Permission to check
  * @returns {boolean} True if has permission
