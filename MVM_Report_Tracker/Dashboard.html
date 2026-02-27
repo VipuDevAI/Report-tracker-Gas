@@ -2233,11 +2233,21 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
     
     function initializeDashboard() {
       loadUserInfo();
+      updateSidebarUserInfo();
       loadKPIs();
       loadFilters();
       initCharts();
       loadRecentResults();
       loadWeakStudents();
+    }
+    
+    function updateSidebarUserInfo() {
+      const email = window.currentUserEmail || localStorage.getItem('mvm_user_email') || '';
+      const role = window.currentUserRole || localStorage.getItem('mvm_user_role') || '';
+      
+      document.getElementById('sidebarUserEmail').textContent = email;
+      document.getElementById('sidebarUserRole').textContent = role;
+      document.getElementById('sidebarUserAvatar').textContent = email ? email.charAt(0).toUpperCase() : 'U';
     }
     
     // Navigation
