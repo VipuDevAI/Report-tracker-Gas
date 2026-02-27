@@ -761,3 +761,110 @@ function archiveYearData(academicYear) {
     message: `Data archived for ${academicYear}`
   };
 }
+
+
+/**
+ * Export students to a new Google Sheet (Excel-compatible)
+ * @param {string} classFilter - Filter by class
+ * @param {string} sectionFilter - Filter by section
+ * @param {string} streamFilter - Filter by stream
+ * @returns {Object} Result with sheet URL
+ */
+function exportStudentsToSheet(classFilter, sectionFilter, streamFilter) {
+  if (!isAdmin()) {
+    return { success: false, message: "Access denied. Admin privileges required." };
+  }
+  
+  const sheet = SpreadsheetApp.getActive().getSheetByName("Students");
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  
+  // Filter data
+  let filteredData = data.slice(1);
+  
+  if (classFilter) {
+    filteredData = filteredData.filter(row => row[2] == classFilter);
+  }
+  if (sectionFilter) {
+    filteredData = filteredData.filter(row => row[3] === sectionFilter);
+  }
+  if (streamFilter) {
+    filteredData = filteredData.filter(row => row[4] === streamFilter);
+  }
+  
+  if (filteredData.length === 0) {
+    return { success: false, message: "No students found with the selected filters." };
+  }
+  
+  // Create new spreadsheet
+  const timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd_HHmm");
+  const filterDesc = [classFilter ? `Class${classFilter}` : '', sectionFilter || '', streamFilter || ''].filter(Boolean).join('_') || 'All';
+  const newSS = SpreadsheetApp.create(`MVM_Students_${filterDesc}_${timestamp}`);
+  const newSheet = newSS.getActiveSheet();
+  
+  // Write headers and data
+  newSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  newSheet.getRange(1, 1, 1, headers.length).setFontWeight("bold").setBackground("#1a6b3a").setFontColor("white");
+  
+  if (filteredData.length > 0) {
+    newSheet.getRange(2, 1, filteredData.length, headers.length).setValues(filteredData);
+  }
+  
+  // Auto-resize columns
+  for (let i = 1; i <= headers.length; i++) {
+    newSheet.autoResizeColumn(i);
+  }
+  
+  logAction("Export Students", `Exported ${filteredData.length} students to Excel`);
+  
+  return {
+    success: true,
+    url: newSS.getUrl(),
+    fileName: newSS.getName(),
+    message: `Exported ${filteredData.length} students`
+  };
+}
+
+
+/**
+ * Export teachers to a new Google Sheet (Excel-compatible)
+ * @returns {Object} Result with sheet URL
+ */
+function exportTeachersToSheet() {
+  if (!isAdmin()) {
+    return { success: false, message: "Access denied. Admin privileges required." };
+  }
+  
+  const sheet = SpreadsheetApp.getActive().getSheetByName("Teachers");
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const teacherData = data.slice(1).filter(row => row[0]); // Filter empty rows
+  
+  if (teacherData.length === 0) {
+    return { success: false, message: "No teachers found." };
+  }
+  
+  // Create new spreadsheet
+  const timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd_HHmm");
+  const newSS = SpreadsheetApp.create(`MVM_Teachers_${timestamp}`);
+  const newSheet = newSS.getActiveSheet();
+  
+  // Write headers and data
+  newSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  newSheet.getRange(1, 1, 1, headers.length).setFontWeight("bold").setBackground("#1a6b3a").setFontColor("white");
+  newSheet.getRange(2, 1, teacherData.length, headers.length).setValues(teacherData);
+  
+  // Auto-resize columns
+  for (let i = 1; i <= headers.length; i++) {
+    newSheet.autoResizeColumn(i);
+  }
+  
+  logAction("Export Teachers", `Exported ${teacherData.length} teachers to Excel`);
+  
+  return {
+    success: true,
+    url: newSS.getUrl(),
+    fileName: newSS.getName(),
+    message: `Exported ${teacherData.length} teachers`
+  };
+}
