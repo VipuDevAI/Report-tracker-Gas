@@ -97,6 +97,45 @@ function getCurrentUserRole() {
 
 
 /**
+ * Verify user email (for login form)
+ * @param {string} email - Email to verify
+ * @returns {Object} { registered: boolean, role: string, message: string }
+ */
+function verifyUserEmail(email) {
+  if (!email) {
+    return { 
+      registered: false, 
+      role: null, 
+      message: "Please enter an email address." 
+    };
+  }
+  
+  email = email.trim().toLowerCase();
+  
+  // Check if admin
+  const adminEmails = ADMIN_EMAIL_LIST.map(e => e.toLowerCase());
+  if (adminEmails.includes(email)) {
+    logAction("Login", `Admin login: ${email}`);
+    return { registered: true, role: "admin", message: "Welcome, Admin!" };
+  }
+  
+  // Check if teacher exists in Teachers sheet
+  const teacher = getTeacherByEmail(email);
+  if (teacher) {
+    logAction("Login", `Teacher login: ${email}`);
+    return { registered: true, role: "teacher", message: `Welcome, ${teacher.name}!` };
+  }
+  
+  // Not registered
+  return { 
+    registered: false, 
+    role: null, 
+    message: `Email "${email}" is not registered. Please contact the administrator.` 
+  };
+}
+
+
+/**
  * Check if current user is an admin
  * @returns {boolean} True if admin
  */
