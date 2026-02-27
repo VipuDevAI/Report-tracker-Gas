@@ -29,7 +29,8 @@
 // They CANNOT see or edit the code (unless given editor access separately)
 const ADMIN_EMAIL_LIST = [
   "rishisans83@gmail.com",    // Owner (can also edit code)
-  "mvmseniors@gmail.com"      // Admin (app access only)
+  "mvmseniors@gmail.com",     // Admin (app access only)
+  "anithasivanesan4604@gmail.com"  // Admin (app access only)
 ];
 
 /**

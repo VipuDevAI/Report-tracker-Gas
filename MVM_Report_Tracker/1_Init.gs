@@ -6,7 +6,8 @@
 // Admin email whitelist
 const ADMIN_EMAILS = [
   "rishisans83@gmail.com",
-  "mvmseniors@gmail.com"
+  "mvmseniors@gmail.com",
+  "anithasivanesan4604@gmail.com"
 ];
 
 // Grade ranges configuration
