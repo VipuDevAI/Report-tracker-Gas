@@ -760,6 +760,75 @@
       font-size: 12px;
       color: #999;
     }
+    
+    /* Sidebar Footer */
+    .sidebar-footer {
+      margin-top: auto;
+      padding: 16px;
+      border-top: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .sidebar-user-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    
+    .sidebar-user-avatar {
+      width: 36px;
+      height: 36px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      color: white;
+      font-size: 14px;
+    }
+    
+    .sidebar-user-details {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    
+    .sidebar-user-email {
+      font-size: 12px;
+      color: rgba(255,255,255,0.9);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 160px;
+    }
+    
+    .sidebar-user-role {
+      font-size: 11px;
+      color: rgba(255,255,255,0.6);
+      text-transform: capitalize;
+    }
+    
+    .logout-btn {
+      width: 100%;
+      padding: 10px;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 8px;
+      color: white;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: background 0.2s;
+    }
+    
+    .logout-btn:hover {
+      background: rgba(255,255,255,0.2);
+    }
   </style>
 </head>
 <body>
