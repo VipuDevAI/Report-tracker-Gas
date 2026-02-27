@@ -3148,6 +3148,44 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
       reader.readAsText(file);
     }
     
+    // ================== EXPORT FUNCTIONS ==================
+    
+    function exportStudentsToExcel() {
+      const classFilter = document.getElementById('studentFilterClass').value;
+      const sectionFilter = document.getElementById('studentFilterSection').value;
+      const streamFilter = document.getElementById('studentFilterStream').value;
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            alert('Excel file created! Opening in new tab...');
+            window.open(result.url, '_blank');
+          } else {
+            alert('Error: ' + result.message);
+          }
+        })
+        .withFailureHandler(function(error) {
+          alert('Error exporting: ' + error);
+        })
+        .exportStudentsToSheet(classFilter, sectionFilter, streamFilter);
+    }
+    
+    function exportTeachersToExcel() {
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            alert('Excel file created! Opening in new tab...');
+            window.open(result.url, '_blank');
+          } else {
+            alert('Error: ' + result.message);
+          }
+        })
+        .withFailureHandler(function(error) {
+          alert('Error exporting: ' + error);
+        })
+        .exportTeachersToSheet();
+    }
+    
     // Parse CSV text to 2D array
     function parseCSV(text) {
       const lines = text.trim().split('\n');
