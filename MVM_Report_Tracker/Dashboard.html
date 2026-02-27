@@ -3075,6 +3075,38 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
     
     // ================== BULK UPLOAD FUNCTIONS ==================
     
+    // Handle file upload for students
+    function handleStudentFileUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      
+      const fileNameEl = document.getElementById('studentFileName');
+      fileNameEl.textContent = `Selected: ${file.name}`;
+      fileNameEl.style.display = 'block';
+      
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        document.getElementById('bulkStudentData').value = e.target.result;
+      };
+      reader.readAsText(file);
+    }
+    
+    // Handle file upload for teachers
+    function handleTeacherFileUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      
+      const fileNameEl = document.getElementById('teacherFileName');
+      fileNameEl.textContent = `Selected: ${file.name}`;
+      fileNameEl.style.display = 'block';
+      
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        document.getElementById('bulkTeacherData').value = e.target.result;
+      };
+      reader.readAsText(file);
+    }
+    
     // Parse CSV text to 2D array
     function parseCSV(text) {
       const lines = text.trim().split('\n');
