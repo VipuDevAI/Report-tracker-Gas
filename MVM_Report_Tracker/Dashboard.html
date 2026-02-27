@@ -2021,22 +2021,110 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
     
     // Initialize on load
     document.addEventListener('DOMContentLoaded', function() {
-      checkAccessAndInit();
+      checkSavedLogin();
     });
     
-    function checkAccessAndInit() {
+    // ================== LOGIN FUNCTIONS ==================
+    
+    function checkSavedLogin() {
+      const savedEmail = localStorage.getItem('mvm_user_email');
+      const savedRole = localStorage.getItem('mvm_user_role');
+      
+      if (savedEmail && savedRole) {
+        // Verify the saved login is still valid
+        google.script.run
+          .withSuccessHandler(function(access) {
+            if (access.registered) {
+              window.currentUserEmail = savedEmail;
+              window.currentUserRole = access.role;
+              localStorage.setItem('mvm_user_role', access.role);
+              hideLoginScreen();
+              initializeDashboard();
+            } else {
+              // Saved login no longer valid
+              localStorage.removeItem('mvm_user_email');
+              localStorage.removeItem('mvm_user_role');
+              showLoginScreen();
+            }
+          })
+          .withFailureHandler(function(error) {
+            showLoginScreen();
+          })
+          .verifyUserEmail(savedEmail);
+      } else {
+        showLoginScreen();
+      }
+    }
+    
+    function showLoginScreen() {
+      document.getElementById('loginScreen').classList.remove('hidden');
+      document.querySelector('.sidebar').style.display = 'none';
+      document.querySelector('.main-content').style.display = 'none';
+    }
+    
+    function hideLoginScreen() {
+      document.getElementById('loginScreen').classList.add('hidden');
+      document.querySelector('.sidebar').style.display = '';
+      document.querySelector('.main-content').style.display = '';
+    }
+    
+    function handleLogin(event) {
+      event.preventDefault();
+      
+      const email = document.getElementById('loginEmail').value.trim().toLowerCase();
+      const loginBtn = document.getElementById('loginBtn');
+      const loginBtnText = document.getElementById('loginBtnText');
+      const loginSpinner = document.getElementById('loginSpinner');
+      const errorDiv = document.getElementById('loginError');
+      
+      // Show loading state
+      loginBtn.disabled = true;
+      loginBtnText.textContent = 'Verifying...';
+      loginSpinner.style.display = 'inline-block';
+      errorDiv.style.display = 'none';
+      
       google.script.run
-        .withSuccessHandler(function(access) {
-          if (!access.registered) {
-            showAccessDenied(access.message);
-          } else {
+        .withSuccessHandler(function(result) {
+          loginBtn.disabled = false;
+          loginBtnText.textContent = 'Login';
+          loginSpinner.style.display = 'none';
+          
+          if (result.registered) {
+            // Save login
+            localStorage.setItem('mvm_user_email', email);
+            localStorage.setItem('mvm_user_role', result.role);
+            window.currentUserEmail = email;
+            window.currentUserRole = result.role;
+            
+            hideLoginScreen();
             initializeDashboard();
+          } else {
+            errorDiv.textContent = result.message || 'Email not registered. Please contact the administrator.';
+            errorDiv.style.display = 'block';
           }
         })
         .withFailureHandler(function(error) {
-          showAccessDenied("Error checking access: " + error);
+          loginBtn.disabled = false;
+          loginBtnText.textContent = 'Login';
+          loginSpinner.style.display = 'none';
+          errorDiv.textContent = 'Error verifying email: ' + error;
+          errorDiv.style.display = 'block';
         })
-        .checkUserAccess();
+        .verifyUserEmail(email);
+    }
+    
+    function logout() {
+      localStorage.removeItem('mvm_user_email');
+      localStorage.removeItem('mvm_user_role');
+      window.currentUserEmail = null;
+      window.currentUserRole = null;
+      showLoginScreen();
+      document.getElementById('loginEmail').value = '';
+    }
+    
+    function checkAccessAndInit() {
+      // Legacy function - now handled by login flow
+      checkSavedLogin();
     }
     
     function showAccessDenied(message) {
