@@ -831,6 +831,27 @@
     .logout-btn:hover {
       background: rgba(255,255,255,0.2);
     }
+    
+    /* File Upload Area */
+    .file-upload-area {
+      border: 2px dashed var(--border);
+      border-radius: 12px;
+      padding: 32px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: var(--bg-main);
+    }
+    
+    .file-upload-area:hover {
+      border-color: var(--primary);
+      background: rgba(26, 107, 58, 0.05);
+    }
+    
+    .file-upload-area.dragover {
+      border-color: var(--primary);
+      background: rgba(26, 107, 58, 0.1);
+    }
   </style>
 </head>
 <body>
