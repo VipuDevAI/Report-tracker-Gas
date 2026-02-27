@@ -626,6 +626,32 @@
   </style>
 </head>
 <body>
+  <!-- Login Screen -->
+  <div id="loginScreen" class="login-screen">
+    <div class="login-container">
+      <div class="login-logo">
+        <img src="https://customer-assets.emergentagent.com/job_exam-results-portal-1/artifacts/9808dr2m_emblem.jpg" alt="MVM Logo">
+      </div>
+      <h1 class="login-title">MVM Report Tracker</h1>
+      <p class="login-subtitle">Please login with your registered email</p>
+      
+      <form id="loginForm" onsubmit="handleLogin(event)">
+        <div class="login-input-group">
+          <label for="loginEmail">Email Address</label>
+          <input type="email" id="loginEmail" class="login-input" placeholder="your.email@gmail.com" required>
+        </div>
+        <button type="submit" class="login-btn" id="loginBtn">
+          <span id="loginBtnText">Login</span>
+          <span id="loginSpinner" class="login-spinner" style="display: none;"></span>
+        </button>
+      </form>
+      
+      <div id="loginError" class="login-error" style="display: none;"></div>
+      
+      <p class="login-footer">Contact school administrator if you don't have access</p>
+    </div>
+  </div>
+
   <!-- Sidebar -->
   <aside class="sidebar">
     <div class="sidebar-header">
