@@ -2299,16 +2299,30 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
     
     // API Calls using google.script.run
     function loadUserInfo() {
+      const storedEmail = window.currentUserEmail || localStorage.getItem('mvm_user_email');
+      
+      if (!storedEmail) {
+        showLoginScreen();
+        return;
+      }
+      
       google.script.run
         .withSuccessHandler(function(info) {
+          if (!info.hasAccess) {
+            logout();
+            return;
+          }
+          
           document.getElementById('userName').textContent = info.name || info.email;
           document.getElementById('userAvatar').textContent = (info.name || info.email).charAt(0).toUpperCase();
           
           // Apply role-based UI restrictions
           applyRoleRestrictions(info);
         })
-        .withFailureHandler(console.error)
-        .getCurrentUserInfo();
+        .withFailureHandler(function(error) {
+          console.error('Error loading user info:', error);
+        })
+        .getUserInfoByEmail(storedEmail);
     }
     
     function applyRoleRestrictions(userInfo) {
