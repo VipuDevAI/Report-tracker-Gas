@@ -3224,6 +3224,121 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
     
     // ================== BULK UPLOAD FUNCTIONS ==================
     
+    // Download template functions
+    function downloadStudentTemplate() {
+      const headers = ['StudentID', 'Name', 'Class', 'Section', 'Stream', 'RollNo', 'Status', 'ElectiveSubject'];
+      const sampleData = [
+        ['', 'STUDENT NAME 1', '11', 'A1', 'Science', '1', 'Active', 'Mathematics'],
+        ['', 'STUDENT NAME 2', '11', 'A1', 'Science', '2', 'Active', 'Hindi'],
+        ['', 'STUDENT NAME 3', '11', 'A2', 'Computer Science', '1', 'Active', 'Sanskrit'],
+        ['', 'STUDENT NAME 4', '12', 'A1', 'Commerce', '1', 'Active', 'Applied Mathematics'],
+        ['', 'STUDENT NAME 5', '12', 'A3', 'Science', '2', 'Active', 'History']
+      ];
+      
+      const csvContent = [
+        headers.join(','),
+        ...sampleData.map(row => row.join(','))
+      ].join('\n');
+      
+      // Add instructions as comments
+      const instructions = `# MVM Report Tracker - Students Upload Template
+# ============================================
+# Instructions:
+# 1. StudentID: Leave empty (auto-generated) or provide existing ID to update
+# 2. Name: Student full name (Required)
+# 3. Class: 9, 10, 11, or 12 (Required)
+# 4. Section: A, B, C, D for Class 9-10 OR A1-A12 for Class 11-12
+# 5. Stream: Science, Computer Science, or Commerce
+# 6. RollNo: Roll number in class
+# 7. Status: Active or Inactive
+# 8. ElectiveSubject: Mathematics, Applied Mathematics, Hindi, History, or Sanskrit
+#
+# Note: Each student chooses ONE elective subject
+# Delete these instruction lines before uploading
+#
+`;
+      
+      downloadCSV(instructions + csvContent, 'MVM_Students_Template.csv');
+    }
+    
+    function downloadTeacherTemplate() {
+      const headers = ['TeacherID', 'Name', 'Subject', 'Classes', 'Sections', 'Email', 'Phone'];
+      const sampleData = [
+        ['', 'Mrs. Lakshmi', 'Mathematics', '11;12', 'A1;A2;A3;A4', 'lakshmi@gmail.com', '9876543210'],
+        ['', 'Mr. Ramesh', 'Physics', '11;12', 'A1;A2;A3', 'ramesh@gmail.com', '9876543211'],
+        ['', 'Mrs. Priya', 'Chemistry', '11;12', 'A1;A2;A3;A4;A5', 'priya@gmail.com', ''],
+        ['', 'Mr. Kumar', 'English', '9;10;11;12', 'A;B;C;D', 'kumar@gmail.com', '9876543212'],
+        ['', 'Mrs. Anitha', 'Hindi', '11;12', 'A1;A2;A3;A4;A5;A6', 'anitha@gmail.com', '']
+      ];
+      
+      const csvContent = [
+        headers.join(','),
+        ...sampleData.map(row => row.join(','))
+      ].join('\n');
+      
+      const instructions = `# MVM Report Tracker - Teachers Upload Template
+# =============================================
+# Instructions:
+# 1. TeacherID: Leave empty (auto-generated) or provide existing ID to update
+# 2. Name: Teacher full name (Required)
+# 3. Subject: Subject they teach (Required)
+# 4. Classes: Use semicolon (;) to separate multiple classes. E.g., 11;12
+# 5. Sections: Use semicolon (;) to separate multiple sections. E.g., A1;A2;A3
+# 6. Email: Teacher's email for login (Required)
+# 7. Phone: Contact number (Optional)
+#
+# Note: Teachers login using their email address
+# Delete these instruction lines before uploading
+#
+`;
+      
+      downloadCSV(instructions + csvContent, 'MVM_Teachers_Template.csv');
+    }
+    
+    function downloadMarksTemplate() {
+      const headers = ['StudentID', 'Subject', 'ExamID', 'Marks'];
+      const sampleData = [
+        ['STU1234567890', 'Mathematics', 'EXM1234567890', '85'],
+        ['STU1234567890', 'Physics', 'EXM1234567890', '78'],
+        ['STU1234567890', 'Chemistry', 'EXM1234567890', '92'],
+        ['STU1234567891', 'Mathematics', 'EXM1234567890', '88'],
+        ['STU1234567891', 'Physics', 'EXM1234567890', '75']
+      ];
+      
+      const csvContent = [
+        headers.join(','),
+        ...sampleData.map(row => row.join(','))
+      ].join('\n');
+      
+      const instructions = `# MVM Report Tracker - Marks Upload Template
+# ==========================================
+# Instructions:
+# 1. StudentID: The student's ID from the Students list (Required)
+# 2. Subject: Subject name exactly as defined in Subjects list (Required)
+# 3. ExamID: The exam ID from the Exams list (Required)
+# 4. Marks: Marks obtained by the student (Required)
+#
+# Tip: Export students list first to get StudentIDs
+# Tip: Check Exams list to get correct ExamID
+# Delete these instruction lines before uploading
+#
+`;
+      
+      downloadCSV(instructions + csvContent, 'MVM_Marks_Template.csv');
+    }
+    
+    function downloadCSV(content, filename) {
+      const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', filename);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+    
     // Handle file upload for students
     function handleStudentFileUpload(event) {
       const file = event.target.files[0];
