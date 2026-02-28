@@ -446,7 +446,8 @@ function getStudents(filters) {
     parentEmail: row[6],
     phone: row[7],
     joinDate: row[8],
-    status: row[9]
+    status: row[9],
+    electiveSubject: row[10] || ''
   }));
   
   // Apply filters
