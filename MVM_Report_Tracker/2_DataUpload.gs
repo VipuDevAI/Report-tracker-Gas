@@ -338,6 +338,14 @@ function addStudent(student) {
     return { success: false, message: "Name and Class are required." };
   }
   
+  // Validate elective subject for class 11 & 12
+  const validElectives = ['Mathematics', 'Applied Mathematics', 'Hindi', 'History', 'Sanskrit'];
+  if ((student.class == 11 || student.class == 12) && student.electiveSubject) {
+    if (!validElectives.includes(student.electiveSubject)) {
+      return { success: false, message: "Invalid elective subject. Choose from: " + validElectives.join(", ") };
+    }
+  }
+  
   const sheet = SpreadsheetApp.getActive().getSheetByName("Students");
   const studentId = `STU${Date.now()}`;
   
@@ -351,10 +359,11 @@ function addStudent(student) {
     student.parentEmail || "",
     student.phone || "",
     new Date(),
-    "Active"
+    "Active",
+    student.electiveSubject || ""
   ]);
   
-  logAction("Add Student", `Added student: ${student.name}`);
+  logAction("Add Student", `Added student: ${student.name} (Elective: ${student.electiveSubject || 'N/A'})`);
   
   return { success: true, message: "Student added successfully!", studentId: studentId };
 }
