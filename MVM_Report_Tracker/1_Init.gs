@@ -62,7 +62,7 @@ function initializeApp() {
   const structure = {
     Students: [
       "StudentID", "Name", "Class", "Section", "Stream", 
-      "RollNo", "ParentEmail", "Phone", "JoinDate", "Status"
+      "RollNo", "ParentEmail", "Phone", "JoinDate", "Status", "ElectiveSubject"
     ],
     Teachers: [
       "TeacherID", "Name", "Subject", "Classes", "Sections", 
