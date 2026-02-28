@@ -3050,15 +3050,55 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
     }
     
     // Form handlers
+    function toggleInternalConfig() {
+      const examType = document.getElementById('examType').value;
+      const enableCheckbox = document.getElementById('enableInternals');
+      const configDiv = document.getElementById('internalMarksConfig');
+      
+      // Auto-enable for certain exam types
+      const autoEnableTypes = ['Quarterly', 'Half Yearly', 'Annual', 'Pre-Board 1', 'Pre-Board 2'];
+      if (autoEnableTypes.includes(examType)) {
+        enableCheckbox.checked = true;
+      }
+      
+      configDiv.style.display = enableCheckbox.checked ? 'block' : 'none';
+      updateTotalMaxMarks();
+    }
+    
+    function updateTotalMaxMarks() {
+      const theory = parseInt(document.getElementById('examMaxMarks').value) || 0;
+      const int1 = parseInt(document.getElementById('internal1Marks').value) || 0;
+      const int2 = parseInt(document.getElementById('internal2Marks').value) || 0;
+      const int3 = parseInt(document.getElementById('internal3Marks').value) || 0;
+      const int4 = parseInt(document.getElementById('internal4Marks').value) || 0;
+      const total = theory + int1 + int2 + int3 + int4;
+      document.getElementById('totalMaxMarks').textContent = total;
+    }
+    
+    // Add event listeners for internal marks fields
+    document.addEventListener('DOMContentLoaded', function() {
+      ['examMaxMarks', 'internal1Marks', 'internal2Marks', 'internal3Marks', 'internal4Marks'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', updateTotalMaxMarks);
+      });
+    });
+    
     function handleCreateExam(e) {
       e.preventDefault();
+      
+      const enableInternals = document.getElementById('enableInternals').checked;
       
       const examData = {
         name: document.getElementById('examName').value,
         examType: document.getElementById('examType').value,
         class: document.getElementById('examClass').value,
         maxMarks: parseInt(document.getElementById('examMaxMarks').value),
-        weightage: parseInt(document.getElementById('examWeightage').value) || 100
+        weightage: parseInt(document.getElementById('examWeightage').value) || 100,
+        hasInternals: enableInternals,
+        internal1: enableInternals ? parseInt(document.getElementById('internal1Marks').value) || 0 : 0,
+        internal2: enableInternals ? parseInt(document.getElementById('internal2Marks').value) || 0 : 0,
+        internal3: enableInternals ? parseInt(document.getElementById('internal3Marks').value) || 0 : 0,
+        internal4: enableInternals ? parseInt(document.getElementById('internal4Marks').value) || 0 : 0
       };
       
       google.script.run
@@ -3066,6 +3106,7 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
           alert(result.message);
           if (result.success) {
             document.getElementById('createExamForm').reset();
+            document.getElementById('internalMarksConfig').style.display = 'none';
             loadFilters();
           }
         })
