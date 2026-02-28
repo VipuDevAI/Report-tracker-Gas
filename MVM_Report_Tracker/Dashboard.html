@@ -1758,11 +1758,16 @@
         <div class="form-group" style="margin-top: 16px;">
           <label class="form-label">Or Paste CSV Data</label>
           <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">
-            Format: StudentID (optional), Name, Class, Section, Stream, RollNo, Status
+            Format: StudentID (optional), Name, Class, Section, Stream, RollNo, Status, ElectiveSubject
           </p>
-          <textarea id="bulkStudentData" class="form-input" rows="10" placeholder="StudentID,Name,Class,Section,Stream,RollNo,Status
-,John Doe,10,A,Science,1,Active
-,Jane Smith,10,A,Science,2,Active"></textarea>
+          <div style="background: #fef3c7; padding: 12px; border-radius: 8px; margin-bottom: 12px; font-size: 12px;">
+            <strong>Elective Subject Options:</strong> Mathematics, Applied Mathematics, Hindi, History, Sanskrit<br>
+            <em>Each student must have ONE elective subject</em>
+          </div>
+          <textarea id="bulkStudentData" class="form-input" rows="10" placeholder="StudentID,Name,Class,Section,Stream,RollNo,Status,ElectiveSubject
+,TANYA MANASVI,XII,A1,Science,1,Active,Hindi
+,ASWATH SARVESH,XII,A1,Science,2,Active,Mathematics
+,DAKSHIN R,XII,A1,Computer Science,3,Active,Sanskrit"></textarea>
         </div>
         <div class="form-group">
           <label style="display: flex; align-items: center; gap: 8px;">
