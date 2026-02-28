@@ -3135,7 +3135,8 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
         class: document.getElementById('newStudentClass').value,
         section: document.getElementById('newStudentSection').value,
         stream: document.getElementById('newStudentStream').value,
-        rollNo: document.getElementById('newStudentRoll').value
+        rollNo: document.getElementById('newStudentRoll').value,
+        electiveSubject: document.getElementById('newStudentElective').value
       };
       
       google.script.run
@@ -3143,6 +3144,7 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
           alert(result.message);
           if (result.success) {
             closeModal('addStudentModal');
+            document.getElementById('addStudentForm').reset();
             loadStudents();
           }
         })
