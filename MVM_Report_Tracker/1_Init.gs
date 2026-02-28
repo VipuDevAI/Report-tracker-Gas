@@ -77,7 +77,8 @@ function initializeApp() {
     ],
     Exams: [
       "ExamID", "ExamName", "ExamType", "Class", "MaxMarks", 
-      "Weightage", "StartDate", "EndDate", "Locked", "CreatedBy", "CreatedAt", "AcademicYear"
+      "Weightage", "StartDate", "EndDate", "Locked", "CreatedBy", "CreatedAt", "AcademicYear",
+      "HasInternals", "Internal1", "Internal2", "Internal3", "Internal4", "TotalMaxMarks"
     ],
     Marks_Master: [
       "EntryID", "StudentID", "StudentName", "Subject", "SubjectCode",
