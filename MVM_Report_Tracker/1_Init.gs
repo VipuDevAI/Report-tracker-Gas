@@ -220,24 +220,25 @@ function seedDefaultSubjects() {
     ["SUB020", "Biology", "BIO", "11,12", "Science", 100, 40, true],
     ["SUB021", "English", "ENG", "11,12", "Science", 100, 40, true],
     
-    // Class 11 & 12 - Computer Science
-    ["SUB022", "Mathematics", "MATH", "11,12", "Computer Science", 100, 40, true],
-    ["SUB023", "Computer Science", "CS", "11,12", "Computer Science", 100, 40, true],
-    ["SUB024", "Physics", "PHY", "11,12", "Computer Science", 100, 40, true],
+    // Class 11 & 12 - Computer Science (Mandatory: Physics, Chemistry, CS, English)
+    ["SUB022", "Computer Science", "CS", "11,12", "Computer Science", 100, 40, true],
+    ["SUB023", "Physics", "PHY", "11,12", "Computer Science", 100, 40, true],
+    ["SUB024", "Chemistry", "CHEM", "11,12", "Computer Science", 100, 40, true],
     ["SUB025", "English", "ENG", "11,12", "Computer Science", 100, 40, true],
-    ["SUB026", "Informatics Practices", "IP", "11,12", "Computer Science", 100, 40, true],
     
-    // Class 11 & 12 - Commerce
-    ["SUB027", "Accountancy", "ACC", "11,12", "Commerce", 100, 40, true],
-    ["SUB028", "Business Studies", "BS", "11,12", "Commerce", 100, 40, true],
-    ["SUB029", "Economics", "ECO", "11,12", "Commerce", 100, 40, true],
-    ["SUB030", "English", "ENG", "11,12", "Commerce", 100, 40, true],
-    ["SUB031", "Mathematics", "MATH", "11,12", "Commerce", 100, 40, true],
+    // Class 11 & 12 - Commerce (Mandatory: Accountancy, Business Studies, Economics, English)
+    ["SUB026", "Accountancy", "ACC", "11,12", "Commerce", 100, 40, true],
+    ["SUB027", "Business Studies", "BS", "11,12", "Commerce", 100, 40, true],
+    ["SUB028", "Economics", "ECO", "11,12", "Commerce", 100, 40, true],
+    ["SUB029", "English", "ENG", "11,12", "Commerce", 100, 40, true],
     
-    // Class 11 & 12 - CORE SUBJECTS (All Streams)
-    ["SUB032", "Hindi", "HIN", "11,12", "All", 100, 40, true],
-    ["SUB033", "History", "HIST", "11,12", "All", 100, 40, true],
-    ["SUB034", "Sanskrit", "SANS", "11,12", "All", 100, 40, true]
+    // Class 11 & 12 - ELECTIVE SUBJECTS (Student chooses ONE)
+    // Maths/Applied Maths OR Hindi OR History OR Sanskrit
+    ["SUB030", "Mathematics", "MATH", "11,12", "Elective", 100, 40, true],
+    ["SUB031", "Applied Mathematics", "AMATH", "11,12", "Elective", 100, 40, true],
+    ["SUB032", "Hindi", "HIN", "11,12", "Elective", 100, 40, true],
+    ["SUB033", "History", "HIST", "11,12", "Elective", 100, 40, true],
+    ["SUB034", "Sanskrit", "SANS", "11,12", "Elective", 100, 40, true]
   ];
 
   if (sheet.getLastRow() <= 1) {
