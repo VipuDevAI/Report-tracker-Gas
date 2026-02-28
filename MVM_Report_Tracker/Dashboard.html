@@ -2146,6 +2146,20 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
           <label class="form-label">Roll No</label>
           <input type="number" class="form-input" id="newStudentRoll">
         </div>
+        <div class="form-group">
+          <label class="form-label">Elective Subject *</label>
+          <select class="form-input" id="newStudentElective" required>
+            <option value="">Select Elective</option>
+            <option value="Mathematics">Mathematics</option>
+            <option value="Applied Mathematics">Applied Mathematics</option>
+            <option value="Hindi">Hindi</option>
+            <option value="History">History</option>
+            <option value="Sanskrit">Sanskrit</option>
+          </select>
+          <p style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">
+            Student chooses ONE: Maths/Applied Maths OR Hindi OR History OR Sanskrit
+          </p>
+        </div>
         <button type="submit" class="btn btn-primary">Add Student</button>
       </form>
     </div>
