@@ -137,11 +137,58 @@ function verifyUserEmail(email) {
 
 /**
  * Check if current user is an admin
+ * Checks both Session email and stored login email
+ * @param {string} email - Optional email to check
  * @returns {boolean} True if admin
  */
-function isAdmin() {
-  const email = getCurrentUser();
-  return ADMIN_EMAIL_LIST.includes(email);
+function isAdmin(email) {
+  // If email provided, check it directly
+  if (email) {
+    return ADMIN_EMAIL_LIST.map(e => e.toLowerCase()).includes(email.toLowerCase());
+  }
+  
+  // Try session first
+  const sessionEmail = getCurrentUser();
+  if (sessionEmail && ADMIN_EMAIL_LIST.map(e => e.toLowerCase()).includes(sessionEmail.toLowerCase())) {
+    return true;
+  }
+  
+  // Check stored login email from PropertiesService
+  const storedEmail = PropertiesService.getUserProperties().getProperty('loggedInEmail');
+  if (storedEmail && ADMIN_EMAIL_LIST.map(e => e.toLowerCase()).includes(storedEmail.toLowerCase())) {
+    return true;
+  }
+  
+  return false;
+}
+
+
+/**
+ * Check if email is admin (direct check)
+ * @param {string} email - Email to check
+ * @returns {boolean} True if admin
+ */
+function isAdminEmail(email) {
+  if (!email) return false;
+  return ADMIN_EMAIL_LIST.map(e => e.toLowerCase()).includes(email.toLowerCase());
+}
+
+
+/**
+ * Store logged in user email (called after successful login)
+ * @param {string} email - User email
+ */
+function setLoggedInUser(email) {
+  PropertiesService.getUserProperties().setProperty('loggedInEmail', email || '');
+}
+
+
+/**
+ * Get logged in user email
+ * @returns {string} Stored email or empty string
+ */
+function getLoggedInUser() {
+  return PropertiesService.getUserProperties().getProperty('loggedInEmail') || '';
 }
 
 
