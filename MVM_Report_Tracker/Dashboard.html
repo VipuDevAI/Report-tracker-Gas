@@ -2718,7 +2718,7 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
         .withSuccessHandler(function(data) {
           const tbody = document.getElementById('studentsBody');
           if (data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No students found</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No students found</td></tr>';
             return;
           }
           tbody.innerHTML = data.map(s => `
@@ -2729,6 +2729,7 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
               <td>${s.section}</td>
               <td>${s.stream}</td>
               <td>${s.rollNo}</td>
+              <td>${s.electiveSubject || '-'}</td>
               <td><span class="badge ${s.status === 'Active' ? 'badge-success' : 'badge-danger'}">${s.status}</span></td>
             </tr>
           `).join('');
