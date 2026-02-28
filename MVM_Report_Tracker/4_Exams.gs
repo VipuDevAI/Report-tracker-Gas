@@ -32,6 +32,13 @@ function createExam(examData) {
   const examId = `EXM${Date.now()}`;
   const academicYear = getCurrentAcademicYear();
   
+  // Calculate total max marks including internals
+  const internal1 = examData.internal1 || 0;
+  const internal2 = examData.internal2 || 0;
+  const internal3 = examData.internal3 || 0;
+  const internal4 = examData.internal4 || 0;
+  const totalMaxMarks = examData.maxMarks + internal1 + internal2 + internal3 + internal4;
+  
   sheet.appendRow([
     examId,
     examData.name,
@@ -42,16 +49,23 @@ function createExam(examData) {
     examData.startDate || new Date(),
     examData.endDate || new Date(),
     false,  // Not locked
-    getCurrentUser(),
+    getLoggedInUser() || getCurrentUser(),
     new Date(),
-    academicYear  // Academic year field
+    academicYear,
+    examData.hasInternals || false,
+    internal1,
+    internal2,
+    internal3,
+    internal4,
+    totalMaxMarks
   ]);
   
-  logAction("Create Exam", `Created exam: ${examData.name} (${examId}) for ${academicYear}`);
+  const internalInfo = examData.hasInternals ? ` (Theory: ${examData.maxMarks}, Internals: ${internal1+internal2+internal3+internal4})` : '';
+  logAction("Create Exam", `Created exam: ${examData.name} (${examId}) for ${academicYear}${internalInfo}`);
   
   return { 
     success: true, 
-    message: `Exam "${examData.name}" created successfully!`,
+    message: `Exam "${examData.name}" created successfully! Total marks: ${totalMaxMarks}`,
     examId: examId
   };
 }
