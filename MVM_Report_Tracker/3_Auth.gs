@@ -115,6 +115,8 @@ function verifyUserEmail(email) {
   // Check if admin
   const adminEmails = ADMIN_EMAIL_LIST.map(e => e.toLowerCase());
   if (adminEmails.includes(email)) {
+    // Store logged in email for backend access checks
+    setLoggedInUser(email);
     logAction("Login", `Admin login: ${email}`);
     return { registered: true, role: "admin", message: "Welcome, Admin!" };
   }
@@ -122,6 +124,8 @@ function verifyUserEmail(email) {
   // Check if teacher exists in Teachers sheet
   const teacher = getTeacherByEmail(email);
   if (teacher) {
+    // Store logged in email for backend access checks
+    setLoggedInUser(email);
     logAction("Login", `Teacher login: ${email}`);
     return { registered: true, role: "teacher", message: `Welcome, ${teacher.name}!` };
   }
