@@ -95,7 +95,13 @@ function getExams(filters) {
     locked: row[8],
     createdBy: row[9],
     createdAt: row[10],
-    academicYear: row[11] || currentYear
+    academicYear: row[11] || currentYear,
+    hasInternals: row[12] || false,
+    internal1: row[13] || 0,
+    internal2: row[14] || 0,
+    internal3: row[15] || 0,
+    internal4: row[16] || 0,
+    totalMaxMarks: row[17] || row[4]
   }));
   
   if (filters) {
