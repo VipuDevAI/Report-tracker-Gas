@@ -1350,21 +1350,27 @@
       <div class="header">
         <h1 class="page-title">Create Exam</h1>
       </div>
-      <div class="table-card" style="max-width: 600px;">
+      <div class="table-card" style="max-width: 700px;">
         <form id="createExamForm" onsubmit="handleCreateExam(event)">
           <div class="form-group">
             <label class="form-label">Exam Name *</label>
-            <input type="text" class="form-input" id="examName" required placeholder="e.g. Midterm Exam 2024">
+            <input type="text" class="form-input" id="examName" required placeholder="e.g. Quarterly Exam 2024-25">
           </div>
           <div class="form-group">
             <label class="form-label">Exam Type</label>
-            <select class="form-input" id="examType">
+            <select class="form-input" id="examType" onchange="toggleInternalConfig()">
               <option value="Unit Test 1">Unit Test 1</option>
               <option value="Unit Test 2">Unit Test 2</option>
-              <option value="Midterm">Midterm</option>
-              <option value="Final">Final</option>
-              <option value="Pre-Board">Pre-Board</option>
+              <option value="Unit Test 3">Unit Test 3</option>
+              <option value="Unit Test 4">Unit Test 4</option>
+              <option value="Quarterly">Quarterly</option>
+              <option value="Half Yearly">Half Yearly</option>
+              <option value="Annual">Annual</option>
+              <option value="Pre-Board 1">Pre-Board 1</option>
+              <option value="Pre-Board 2">Pre-Board 2</option>
               <option value="Practical">Practical</option>
+              <option value="Internal Assessment">Internal Assessment</option>
+              <option value="Other">Other</option>
             </select>
           </div>
           <div class="form-group">
@@ -1378,13 +1384,55 @@
             </select>
           </div>
           <div class="form-group">
-            <label class="form-label">Max Marks *</label>
+            <label class="form-label">Max Marks (Theory/Written) *</label>
             <input type="number" class="form-input" id="examMaxMarks" required min="1" value="100">
           </div>
-          <div class="form-group">
-            <label class="form-label">Weightage (%)</label>
-            <input type="number" class="form-input" id="examWeightage" min="0" max="100" value="100">
+          
+          <!-- Internal Marks Configuration -->
+          <div id="internalMarksConfig" style="display: none; background: #f0fdf4; padding: 16px; border-radius: 8px; margin-bottom: 16px; border: 1px solid #86efac;">
+            <h4 style="margin-bottom: 12px; color: #15803d;">Internal Marks Configuration</h4>
+            <p style="font-size: 12px; color: #166534; margin-bottom: 16px;">
+              Configure internal assessment components for this exam. These will be added to the theory marks.
+            </p>
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
+              <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label">Internal 1 (e.g., Project/Assignment)</label>
+                <input type="number" class="form-input" id="internal1Marks" min="0" value="0" placeholder="Max marks">
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label">Internal 2 (e.g., Practical/Lab)</label>
+                <input type="number" class="form-input" id="internal2Marks" min="0" value="0" placeholder="Max marks">
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label">Internal 3 (e.g., Oral/Viva)</label>
+                <input type="number" class="form-input" id="internal3Marks" min="0" value="0" placeholder="Max marks">
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label">Internal 4 (e.g., Attendance)</label>
+                <input type="number" class="form-input" id="internal4Marks" min="0" value="0" placeholder="Max marks">
+              </div>
+            </div>
+            <div style="margin-top: 12px; padding: 10px; background: white; border-radius: 6px;">
+              <strong>Total Max Marks: </strong><span id="totalMaxMarks">100</span>
+              <span style="font-size: 12px; color: #666;"> (Theory + Internals)</span>
+            </div>
           </div>
+          
+          <div class="form-group">
+            <label class="form-label">Weightage (%) for Final Grade</label>
+            <input type="number" class="form-input" id="examWeightage" min="0" max="100" value="100">
+            <p style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">
+              How much this exam contributes to the final grade calculation
+            </p>
+          </div>
+          
+          <div class="form-group">
+            <label style="display: flex; align-items: center; gap: 8px;">
+              <input type="checkbox" id="enableInternals" onchange="toggleInternalConfig()">
+              Enable Internal Marks for this exam
+            </label>
+          </div>
+          
           <button type="submit" class="btn btn-primary">Create Exam</button>
         </form>
       </div>
