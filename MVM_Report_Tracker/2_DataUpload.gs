@@ -60,6 +60,7 @@ function bulkUploadStudents(data, options) {
     const stream = row[4] || "Science";
     const rollNo = row[5] || rowIdx;
     const status = row[6] || "Active";
+    const electiveSubject = row[7] || "";
     
     // Validation
     if (!name) {
@@ -71,6 +72,14 @@ function bulkUploadStudents(data, options) {
     if (!cls) {
       results.failed++;
       results.errors.push({ row: rowIdx + 1, error: "Class is required" });
+      return;
+    }
+    
+    // Validate elective for class 11 & 12
+    const validElectives = ['Mathematics', 'Applied Mathematics', 'Hindi', 'History', 'Sanskrit', ''];
+    if ((cls == '11' || cls == '12') && electiveSubject && !validElectives.includes(electiveSubject)) {
+      results.failed++;
+      results.errors.push({ row: rowIdx + 1, error: `Invalid elective: ${electiveSubject}. Use: Mathematics, Applied Mathematics, Hindi, History, or Sanskrit` });
       return;
     }
     
@@ -86,10 +95,11 @@ function bulkUploadStudents(data, options) {
       section,
       stream,
       rollNo,
-      row[7] || "",  // parentEmail
-      row[8] || "",  // phone
+      "",  // parentEmail
+      "",  // phone
       new Date(),
-      status
+      status,
+      electiveSubject
     ];
     
     if (existingByKey || existingById) {
