@@ -52,6 +52,20 @@ function getEffectiveUser() {
 
 
 /**
+ * Get the actual logged-in user email (checks both Session and stored)
+ * @returns {string} User email
+ */
+function getActualUserEmail() {
+  // Try session first
+  const sessionEmail = getCurrentUser();
+  if (sessionEmail) return sessionEmail;
+  
+  // Fall back to stored email
+  return getLoggedInUser() || '';
+}
+
+
+/**
  * Check if user is registered (admin or teacher)
  * @returns {Object} { registered: boolean, role: string, message: string }
  */
@@ -198,21 +212,41 @@ function getLoggedInUser() {
 
 /**
  * Check if current user is a teacher
+ * @param {string} email - Optional email to check
  * @returns {boolean} True if teacher
  */
-function isTeacher() {
-  const email = getCurrentUser();
-  const teacher = getTeacherByEmail(email);
-  return teacher !== null;
+function isTeacher(email) {
+  // If email provided, check it directly
+  if (email) {
+    const teacher = getTeacherByEmail(email);
+    return teacher !== null;
+  }
+  
+  // Try session first
+  const sessionEmail = getCurrentUser();
+  if (sessionEmail) {
+    const teacher = getTeacherByEmail(sessionEmail);
+    if (teacher) return true;
+  }
+  
+  // Check stored login email
+  const storedEmail = getLoggedInUser();
+  if (storedEmail) {
+    const teacher = getTeacherByEmail(storedEmail);
+    if (teacher) return true;
+  }
+  
+  return false;
 }
 
 
 /**
  * Check if user has any valid access
+ * @param {string} email - Optional email to check
  * @returns {boolean} True if admin or teacher
  */
-function hasAccess() {
-  return isAdmin() || isTeacher();
+function hasAccess(email) {
+  return isAdmin(email) || isTeacher(email);
 }
 
 
@@ -222,12 +256,20 @@ function hasAccess() {
  * @returns {Object|null} Teacher object or null
  */
 function getTeacherByEmail(email) {
+  if (!email) return null;
+  
   const sheet = SpreadsheetApp.getActive().getSheetByName("Teachers");
   const data = sheet.getDataRange().getValues();
   
   if (data.length <= 1) return null;
   
-  const row = data.find(r => r[5] === email && r[8] === "Active");
+  // Case-insensitive email comparison
+  const emailLower = email.trim().toLowerCase();
+  const row = data.find(r => {
+    const teacherEmail = (r[5] || '').toString().trim().toLowerCase();
+    const status = (r[8] || '').toString().trim();
+    return teacherEmail === emailLower && status === "Active";
+  });
   
   if (!row) return null;
   
@@ -251,22 +293,27 @@ function getTeacherByEmail(email) {
  * @returns {Object|null} Teacher assignment object with parsed arrays
  */
 function getTeacherAssignment(email) {
-  const teacherEmail = email || getCurrentUser();
+  // Get email from parameter, session, or stored login
+  const teacherEmail = email || getActualUserEmail();
   const teacher = getTeacherByEmail(teacherEmail);
   
   if (!teacher) return null;
   
-  // Parse comma-separated values into arrays
-  const classesRaw = teacher.classes || "";
-  const sectionsRaw = teacher.sections || "";
+  // Parse comma/semicolon-separated values into arrays
+  const classesRaw = String(teacher.classes || "");
+  const sectionsRaw = String(teacher.sections || "");
+  
+  // Handle both comma and semicolon separators
+  const classesSplit = classesRaw.includes(";") ? classesRaw.split(";") : classesRaw.split(",");
+  const sectionsSplit = sectionsRaw.includes(";") ? sectionsRaw.split(";") : sectionsRaw.split(",");
   
   return {
     teacherId: teacher.teacherId,
     name: teacher.name,
     email: teacher.email,
     subject: teacher.subject,
-    classes: classesRaw.split(",").map(c => c.trim()).filter(c => c),
-    sections: sectionsRaw.split(",").map(s => s.trim()).filter(s => s),
+    classes: classesSplit.map(c => c.trim()).filter(c => c),
+    sections: sectionsSplit.map(s => s.trim()).filter(s => s),
     hasAllClasses: classesRaw.toLowerCase().includes("all"),
     hasAllSections: sectionsRaw.toLowerCase().includes("all")
   };
