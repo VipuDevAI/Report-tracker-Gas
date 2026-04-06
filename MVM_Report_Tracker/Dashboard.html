@@ -989,6 +989,40 @@
       border-color: var(--primary);
       background: rgba(26, 107, 58, 0.1);
     }
+    
+    /* App Footer */
+    .app-footer {
+      text-align: center;
+      padding: 24px;
+      margin-top: 40px;
+      border-top: 1px solid var(--border);
+      color: var(--text-secondary);
+      font-size: 13px;
+    }
+    
+    .app-footer span {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      font-weight: 600;
+    }
+    
+    .login-app-footer {
+      margin-top: 32px;
+      padding-top: 20px;
+      border-top: 1px solid #e5e7eb;
+      font-size: 12px;
+      color: #9ca3af;
+    }
+    
+    .login-app-footer span {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>
@@ -1015,6 +1049,10 @@
       <div id="loginError" class="login-error" style="display: none;"></div>
       
       <p class="login-footer">Contact school administrator if you don't have access</p>
+      
+      <div class="login-app-footer">
+        Developed by <span>SmartGenEduX</span> @ 2k26
+      </div>
     </div>
   </div>
 
@@ -2257,6 +2295,11 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
         </div>
       </div>
     </div>
+    
+    <!-- App Footer -->
+    <footer class="app-footer">
+      Developed by <span>SmartGenEduX</span> @ 2k26
+    </footer>
   </main>
   
   <!-- Modals -->
