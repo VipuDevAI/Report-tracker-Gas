@@ -66,7 +66,7 @@ function initializeApp() {
     ],
     Teachers: [
       "TeacherID", "Name", "Subject", "Classes", "Sections", 
-      "Email", "Phone", "JoinDate", "Status"
+      "Email", "Phone", "JoinDate", "Status", "IsClassTeacher", "ClassTeacherOf"
     ],
     Subjects: [
       "SubjectID", "SubjectName", "SubjectCode", "Class", "Stream", 
@@ -423,4 +423,315 @@ function doGet(e) {
     .setTitle('MVM Report Tracker')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+
+/**
+ * Get the spreadsheet URL to share
+ * @returns {string} Spreadsheet URL
+ */
+function getSpreadsheetUrl() {
+  return SpreadsheetApp.getActive().getUrl();
+}
+
+
+/**
+ * Create class-wise student sheets for Class 11 & 12
+ * Creates: Students_11_A1, Students_11_A2, ... Students_12_A12
+ */
+function createClassWiseSheets() {
+  const ss = SpreadsheetApp.getActive();
+  
+  const headers = [
+    "SNo", "Name", "RollNo", "Stream", "ElectiveSubject", 
+    "ParentName", "ParentPhone", "ParentEmail", "Address", "Status"
+  ];
+  
+  const sections = ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11", "A12"];
+  const classes = [11, 12];
+  
+  let sheetsCreated = 0;
+  
+  classes.forEach(cls => {
+    sections.forEach(section => {
+      const sheetName = `Students_${cls}_${section}`;
+      
+      // Check if sheet already exists
+      let sheet = ss.getSheetByName(sheetName);
+      if (!sheet) {
+        sheet = ss.insertSheet(sheetName);
+        sheetsCreated++;
+      }
+      
+      // Set headers if first row is empty
+      if (sheet.getRange(1, 1).getValue() === "") {
+        sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+        
+        // Style header row
+        const headerRange = sheet.getRange(1, 1, 1, headers.length);
+        headerRange.setFontWeight("bold");
+        headerRange.setBackground("#059669");
+        headerRange.setFontColor("white");
+        headerRange.setHorizontalAlignment("center");
+        
+        // Add data validation for Stream
+        const streamRule = SpreadsheetApp.newDataValidation()
+          .requireValueInList(["Science", "Computer Science", "Commerce"], true)
+          .build();
+        sheet.getRange(2, 4, 500, 1).setDataValidation(streamRule);
+        
+        // Add data validation for ElectiveSubject
+        const electiveRule = SpreadsheetApp.newDataValidation()
+          .requireValueInList(["Mathematics", "Applied Mathematics", "Hindi", "History", "Sanskrit"], true)
+          .build();
+        sheet.getRange(2, 5, 500, 1).setDataValidation(electiveRule);
+        
+        // Add data validation for Status
+        const statusRule = SpreadsheetApp.newDataValidation()
+          .requireValueInList(["Active", "Inactive", "TC", "Promoted"], true)
+          .build();
+        sheet.getRange(2, 10, 500, 1).setDataValidation(statusRule);
+        
+        // Auto-resize columns
+        for (let i = 1; i <= headers.length; i++) {
+          sheet.autoResizeColumn(i);
+        }
+        
+        // Set column widths
+        sheet.setColumnWidth(2, 200); // Name
+        sheet.setColumnWidth(9, 250); // Address
+        
+        // Add sheet description
+        sheet.getRange(1, headers.length + 2).setValue(`Class ${cls} - Section ${section}`);
+        sheet.getRange(1, headers.length + 2).setFontWeight("bold").setFontColor("#059669");
+      }
+    });
+  });
+  
+  // Create Teachers Master sheet
+  createTeachersMasterSheet();
+  
+  // Create Class Teachers sheet
+  createClassTeachersSheet();
+  
+  logAction("Create Sheets", `Created ${sheetsCreated} class-wise student sheets`);
+  
+  return { 
+    success: true, 
+    message: `Created ${sheetsCreated} class-wise sheets for Class 11 & 12 (A1-A12)` 
+  };
+}
+
+
+/**
+ * Create Teachers Master Data sheet
+ */
+function createTeachersMasterSheet() {
+  const ss = SpreadsheetApp.getActive();
+  const sheetName = "Teachers_Master";
+  
+  let sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+  }
+  
+  const headers = [
+    "SNo", "Name", "Subject", "Qualification", "Experience", 
+    "Classes", "Sections", "Email", "Phone", "Address", 
+    "JoinDate", "IsClassTeacher", "ClassTeacherOf", "Status"
+  ];
+  
+  if (sheet.getRange(1, 1).getValue() === "") {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    
+    // Style header
+    const headerRange = sheet.getRange(1, 1, 1, headers.length);
+    headerRange.setFontWeight("bold");
+    headerRange.setBackground("#059669");
+    headerRange.setFontColor("white");
+    headerRange.setHorizontalAlignment("center");
+    
+    // Data validation for IsClassTeacher
+    const yesNoRule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(["Yes", "No"], true)
+      .build();
+    sheet.getRange(2, 12, 200, 1).setDataValidation(yesNoRule);
+    
+    // Data validation for Status
+    const statusRule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(["Active", "Inactive", "On Leave", "Resigned"], true)
+      .build();
+    sheet.getRange(2, 14, 200, 1).setDataValidation(statusRule);
+    
+    // Auto-resize
+    for (let i = 1; i <= headers.length; i++) {
+      sheet.autoResizeColumn(i);
+    }
+    sheet.setColumnWidth(2, 200); // Name
+    sheet.setColumnWidth(10, 250); // Address
+  }
+  
+  return sheet;
+}
+
+
+/**
+ * Create Class Teachers Assignment sheet
+ */
+function createClassTeachersSheet() {
+  const ss = SpreadsheetApp.getActive();
+  const sheetName = "Class_Teachers";
+  
+  let sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+  }
+  
+  const headers = ["Class", "Section", "ClassTeacherName", "ClassTeacherEmail", "ClassTeacherPhone"];
+  
+  if (sheet.getRange(1, 1).getValue() === "") {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    
+    // Style header
+    const headerRange = sheet.getRange(1, 1, 1, headers.length);
+    headerRange.setFontWeight("bold");
+    headerRange.setBackground("#059669");
+    headerRange.setFontColor("white");
+    
+    // Pre-populate class/section combinations
+    const sections = ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11", "A12"];
+    const classes = [11, 12];
+    
+    let rowNum = 2;
+    classes.forEach(cls => {
+      sections.forEach(section => {
+        sheet.getRange(rowNum, 1).setValue(cls);
+        sheet.getRange(rowNum, 2).setValue(section);
+        rowNum++;
+      });
+    });
+    
+    // Auto-resize
+    for (let i = 1; i <= headers.length; i++) {
+      sheet.autoResizeColumn(i);
+    }
+  }
+  
+  return sheet;
+}
+
+
+/**
+ * Sync students from class-wise sheets to main Students sheet
+ */
+function syncStudentsFromClassSheets() {
+  const ss = SpreadsheetApp.getActive();
+  const mainSheet = ss.getSheetByName("Students");
+  
+  const sections = ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11", "A12"];
+  const classes = [11, 12];
+  
+  let totalSynced = 0;
+  let allStudents = [];
+  
+  classes.forEach(cls => {
+    sections.forEach(section => {
+      const sheetName = `Students_${cls}_${section}`;
+      const sheet = ss.getSheetByName(sheetName);
+      
+      if (sheet && sheet.getLastRow() > 1) {
+        const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 10).getValues();
+        
+        data.forEach((row, idx) => {
+          if (row[1]) { // If name exists
+            const studentId = `STU${cls}${section}${String(idx + 1).padStart(3, '0')}`;
+            allStudents.push([
+              studentId,
+              row[1],  // Name
+              cls,     // Class
+              section, // Section
+              row[3] || "Science",  // Stream
+              row[2] || idx + 1,    // RollNo
+              row[7] || "",         // ParentEmail
+              row[6] || "",         // Phone
+              new Date(),           // JoinDate
+              row[9] || "Active",   // Status
+              row[4] || ""          // ElectiveSubject
+            ]);
+            totalSynced++;
+          }
+        });
+      }
+    });
+  });
+  
+  if (allStudents.length > 0) {
+    // Clear existing data (keep header)
+    if (mainSheet.getLastRow() > 1) {
+      mainSheet.getRange(2, 1, mainSheet.getLastRow() - 1, 11).clearContent();
+    }
+    
+    // Write all students
+    mainSheet.getRange(2, 1, allStudents.length, 11).setValues(allStudents);
+  }
+  
+  logAction("Sync Students", `Synced ${totalSynced} students from class-wise sheets`);
+  
+  return {
+    success: true,
+    message: `Synced ${totalSynced} students from class-wise sheets to main Students sheet`
+  };
+}
+
+
+/**
+ * Sync teachers from Teachers_Master to main Teachers sheet
+ */
+function syncTeachersFromMaster() {
+  const ss = SpreadsheetApp.getActive();
+  const masterSheet = ss.getSheetByName("Teachers_Master");
+  const mainSheet = ss.getSheetByName("Teachers");
+  
+  if (!masterSheet || masterSheet.getLastRow() <= 1) {
+    return { success: false, message: "No teachers found in Teachers_Master sheet" };
+  }
+  
+  const data = masterSheet.getRange(2, 1, masterSheet.getLastRow() - 1, 14).getValues();
+  let allTeachers = [];
+  
+  data.forEach((row, idx) => {
+    if (row[1] && row[7]) { // If name and email exist
+      const teacherId = `TCH${String(idx + 1).padStart(4, '0')}`;
+      allTeachers.push([
+        teacherId,
+        row[1],  // Name
+        row[2],  // Subject
+        row[5],  // Classes
+        row[6],  // Sections
+        row[7],  // Email
+        row[8],  // Phone
+        row[10] || new Date(), // JoinDate
+        row[13] || "Active",   // Status
+        row[11] || "No",       // IsClassTeacher
+        row[12] || ""          // ClassTeacherOf
+      ]);
+    }
+  });
+  
+  if (allTeachers.length > 0) {
+    // Clear existing data (keep header)
+    if (mainSheet.getLastRow() > 1) {
+      mainSheet.getRange(2, 1, mainSheet.getLastRow() - 1, 11).clearContent();
+    }
+    
+    // Write all teachers
+    mainSheet.getRange(2, 1, allTeachers.length, 11).setValues(allTeachers);
+  }
+  
+  logAction("Sync Teachers", `Synced ${allTeachers.length} teachers from master sheet`);
+  
+  return {
+    success: true,
+    message: `Synced ${allTeachers.length} teachers from Teachers_Master sheet`
+  };
 }
