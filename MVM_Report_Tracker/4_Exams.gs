@@ -28,46 +28,53 @@ function createExam(examData) {
     return { success: false, message: "Weightage must be between 0 and 100." };
   }
   
-  const sheet = SpreadsheetApp.getActive().getSheetByName("Exams");
-  const examId = `EXM${Date.now()}`;
-  const academicYear = getCurrentAcademicYear();
-  
-  // Calculate total max marks including internals
-  const internal1 = examData.internal1 || 0;
-  const internal2 = examData.internal2 || 0;
-  const internal3 = examData.internal3 || 0;
-  const internal4 = examData.internal4 || 0;
-  const totalMaxMarks = examData.maxMarks + internal1 + internal2 + internal3 + internal4;
-  
-  sheet.appendRow([
-    examId,
-    examData.name,
-    examData.examType || "Regular",
-    examData.class || "All",
-    examData.maxMarks,
-    examData.weightage || 100,
-    examData.startDate || new Date(),
-    examData.endDate || new Date(),
-    false,  // Not locked
-    getLoggedInUser() || getCurrentUser(),
-    new Date(),
-    academicYear,
-    examData.hasInternals || false,
-    internal1,
-    internal2,
-    internal3,
-    internal4,
-    totalMaxMarks
-  ]);
-  
-  const internalInfo = examData.hasInternals ? ` (Theory: ${examData.maxMarks}, Internals: ${internal1+internal2+internal3+internal4})` : '';
-  logAction("Create Exam", `Created exam: ${examData.name} (${examId}) for ${academicYear}${internalInfo}`);
-  
-  return { 
-    success: true, 
-    message: `Exam "${examData.name}" created successfully! Total marks: ${totalMaxMarks}`,
-    examId: examId
-  };
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+    
+    const sheet = SpreadsheetApp.getActive().getSheetByName("Exams");
+    const examId = `EXM${Date.now()}`;
+    const academicYear = getCurrentAcademicYear();
+    
+    // Calculate total max marks including internals
+    const internal1 = examData.internal1 || 0;
+    const internal2 = examData.internal2 || 0;
+    const internal3 = examData.internal3 || 0;
+    const internal4 = examData.internal4 || 0;
+    const totalMaxMarks = examData.maxMarks + internal1 + internal2 + internal3 + internal4;
+    
+    sheet.appendRow([
+      examId,
+      examData.name,
+      examData.examType || "Regular",
+      examData.class || "All",
+      examData.maxMarks,
+      examData.weightage || 100,
+      examData.startDate || new Date(),
+      examData.endDate || new Date(),
+      false,  // Not locked
+      getLoggedInUser() || getCurrentUser(),
+      new Date(),
+      academicYear,
+      examData.hasInternals || false,
+      internal1,
+      internal2,
+      internal3,
+      internal4,
+      totalMaxMarks
+    ]);
+    
+    const internalInfo = examData.hasInternals ? ` (Theory: ${examData.maxMarks}, Internals: ${internal1+internal2+internal3+internal4})` : '';
+    logAction("Create Exam", `Created exam: ${examData.name} (${examId}) for ${academicYear}${internalInfo}`);
+    
+    return { 
+      success: true, 
+      message: `Exam "${examData.name}" created successfully! Total marks: ${totalMaxMarks}`,
+      examId: examId
+    };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
 }
 
 

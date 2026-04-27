@@ -23,149 +23,162 @@ function bulkUploadStudents(data, options) {
   const updateExisting = opts.updateExisting || false;
   const previewOnly = opts.preview || false;
   
-  const sheet = SpreadsheetApp.getActive().getSheetByName("Students");
-  const existingData = sheet.getDataRange().getValues();
-  
-  // Build index of existing students (class-section-rollno as key)
-  const existingIndex = {};
-  const existingIdIndex = {};
-  existingData.slice(1).forEach((row, idx) => {
-    const key = `${row[2]}-${row[3]}-${row[5]}`; // class-section-rollno
-    existingIndex[key] = { row: row, index: idx + 2 };
-    if (row[0]) existingIdIndex[row[0]] = { row: row, index: idx + 2 };
-  });
-  
-  const results = {
-    preview: [],
-    created: 0,
-    updated: 0,
-    failed: 0,
-    errors: [],
-    duplicates: []
-  };
-  
-  const toCreate = [];
-  const toUpdate = [];
-  
-  data.forEach((row, rowIdx) => {
-    // Skip header row if detected
-    if (rowIdx === 0 && (row[0] === "StudentID" || row[0] === "StudentId" || row[1] === "Name")) {
-      return;
-    }
+  const lock = LockService.getScriptLock();
+  try {
+    if (!previewOnly) lock.waitLock(30000);
     
-    const studentId = row[0] || `STU${Date.now()}${rowIdx}`;
-    const name = row[1] || "";
-    const cls = String(row[2] || "");
-    const section = row[3] || "A";
-    const stream = row[4] || "Science";
-    const rollNo = row[5] || rowIdx;
-    const status = row[6] || "Active";
-    const electiveSubject = row[7] || "";
+    const sheet = SpreadsheetApp.getActive().getSheetByName("Students");
+    const lastRow = sheet.getLastRow();
+    const lastCol = Math.max(sheet.getLastColumn(), 12);
+    const existingData = lastRow > 0
+      ? sheet.getRange(1, 1, lastRow, lastCol).getValues()
+      : [[]];
+    const academicYear = getCurrentAcademicYear();
     
-    // Validation
-    if (!name) {
-      results.failed++;
-      results.errors.push({ row: rowIdx + 1, error: "Name is required" });
-      return;
-    }
-    
-    if (!cls) {
-      results.failed++;
-      results.errors.push({ row: rowIdx + 1, error: "Class is required" });
-      return;
-    }
-    
-    // Validate elective for class 11 & 12
-    const validElectives = ['Mathematics', 'Applied Mathematics', 'Hindi', 'History', 'Sanskrit', ''];
-    if ((cls == '11' || cls == '12') && electiveSubject && !validElectives.includes(electiveSubject)) {
-      results.failed++;
-      results.errors.push({ row: rowIdx + 1, error: `Invalid elective: ${electiveSubject}. Use: Mathematics, Applied Mathematics, Hindi, History, or Sanskrit` });
-      return;
-    }
-    
-    // Check for duplicates (same class + section + roll no)
-    const key = `${cls}-${section}-${rollNo}`;
-    const existingByKey = existingIndex[key];
-    const existingById = existingIdIndex[studentId];
-    
-    const studentData = [
-      studentId,
-      name,
-      cls,
-      section,
-      stream,
-      rollNo,
-      "",  // parentEmail
-      "",  // phone
-      new Date(),
-      status,
-      electiveSubject
-    ];
-    
-    if (existingByKey || existingById) {
-      if (updateExisting) {
-        const existingRecord = existingByKey || existingById;
-        toUpdate.push({
-          rowIndex: existingRecord.index,
-          data: studentData,
-          original: existingRecord.row
-        });
-        results.updated++;
-      } else {
-        results.duplicates.push({
-          row: rowIdx + 1,
-          name: name,
-          class: cls,
-          section: section,
-          rollNo: rollNo
-        });
-        results.failed++;
-      }
-    } else {
-      toCreate.push(studentData);
-      results.created++;
-    }
-    
-    results.preview.push({
-      studentId: studentId,
-      name: name,
-      class: cls,
-      section: section,
-      stream: stream,
-      rollNo: rollNo,
-      status: existingByKey || existingById ? (updateExisting ? "UPDATE" : "DUPLICATE") : "NEW"
+    // Build index of existing students (class-section-rollno as key)
+    const existingIndex = {};
+    const existingIdIndex = {};
+    existingData.slice(1).forEach((row, idx) => {
+      const key = `${row[2]}-${row[3]}-${row[5]}`; // class-section-rollno
+      existingIndex[key] = { row: row, index: idx + 2 };
+      if (row[0]) existingIdIndex[row[0]] = { row: row, index: idx + 2 };
     });
-  });
-  
-  // If preview only, return without writing
-  if (previewOnly) {
+    
+    const results = {
+      preview: [],
+      created: 0,
+      updated: 0,
+      failed: 0,
+      errors: [],
+      duplicates: []
+    };
+    
+    const toCreate = [];
+    const toUpdate = [];
+    
+    data.forEach((row, rowIdx) => {
+      // Skip header row if detected
+      if (rowIdx === 0 && (row[0] === "StudentID" || row[0] === "StudentId" || row[1] === "Name")) {
+        return;
+      }
+      
+      const studentId = row[0] || `STU${Date.now()}${rowIdx}`;
+      const name = row[1] || "";
+      const cls = String(row[2] || "");
+      const section = row[3] || "A";
+      const stream = row[4] || "Science";
+      const rollNo = row[5] || rowIdx;
+      const status = row[6] || "Active";
+      const electiveSubject = row[7] || "";
+      
+      // Validation
+      if (!name) {
+        results.failed++;
+        results.errors.push({ row: rowIdx + 1, error: "Name is required" });
+        return;
+      }
+      
+      if (!cls) {
+        results.failed++;
+        results.errors.push({ row: rowIdx + 1, error: "Class is required" });
+        return;
+      }
+      
+      // Validate elective for class 11 & 12
+      const validElectives = ['Mathematics', 'Applied Mathematics', 'Hindi', 'History', 'Sanskrit', ''];
+      if ((cls == '11' || cls == '12') && electiveSubject && !validElectives.includes(electiveSubject)) {
+        results.failed++;
+        results.errors.push({ row: rowIdx + 1, error: `Invalid elective: ${electiveSubject}. Use: Mathematics, Applied Mathematics, Hindi, History, or Sanskrit` });
+        return;
+      }
+      
+      // Check for duplicates (same class + section + roll no)
+      const key = `${cls}-${section}-${rollNo}`;
+      const existingByKey = existingIndex[key];
+      const existingById = existingIdIndex[studentId];
+      
+      const studentData = [
+        studentId,
+        name,
+        cls,
+        section,
+        stream,
+        rollNo,
+        "",  // parentEmail
+        "",  // phone
+        new Date(),
+        status,
+        electiveSubject,
+        academicYear
+      ];
+      
+      if (existingByKey || existingById) {
+        if (updateExisting) {
+          const existingRecord = existingByKey || existingById;
+          toUpdate.push({
+            rowIndex: existingRecord.index,
+            data: studentData,
+            original: existingRecord.row
+          });
+          results.updated++;
+        } else {
+          results.duplicates.push({
+            row: rowIdx + 1,
+            name: name,
+            class: cls,
+            section: section,
+            rollNo: rollNo
+          });
+          results.failed++;
+        }
+      } else {
+        toCreate.push(studentData);
+        results.created++;
+      }
+      
+      results.preview.push({
+        studentId: studentId,
+        name: name,
+        class: cls,
+        section: section,
+        stream: stream,
+        rollNo: rollNo,
+        status: existingByKey || existingById ? (updateExisting ? "UPDATE" : "DUPLICATE") : "NEW"
+      });
+    });
+    
+    // If preview only, return without writing
+    if (previewOnly) {
+      return {
+        success: true,
+        preview: true,
+        results: results,
+        message: `Preview: ${results.created} new, ${results.updated} updates, ${results.failed} failed`
+      };
+    }
+    
+    // Write new students (batch)
+    if (toCreate.length > 0) {
+      const writeRow = sheet.getLastRow() + 1;
+      sheet.getRange(writeRow, 1, toCreate.length, 12).setValues(toCreate);
+    }
+    
+    // Update existing students (batch by individual row)
+    toUpdate.forEach(item => {
+      sheet.getRange(item.rowIndex, 1, 1, 12).setValues([item.data]);
+    });
+    
+    logAction("Bulk Upload Students", `Created: ${results.created}, Updated: ${results.updated}, Failed: ${results.failed}`);
+    
     return {
       success: true,
-      preview: true,
+      preview: false,
       results: results,
-      message: `Preview: ${results.created} new, ${results.updated} updates, ${results.failed} failed`
+      message: `Import complete: ${results.created} created, ${results.updated} updated, ${results.failed} failed`
     };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
   }
-  
-  // Write new students
-  if (toCreate.length > 0) {
-    const lastRow = sheet.getLastRow();
-    sheet.getRange(lastRow + 1, 1, toCreate.length, 10).setValues(toCreate);
-  }
-  
-  // Update existing students
-  toUpdate.forEach(item => {
-    sheet.getRange(item.rowIndex, 1, 1, 10).setValues([item.data]);
-  });
-  
-  logAction("Bulk Upload Students", `Created: ${results.created}, Updated: ${results.updated}, Failed: ${results.failed}`);
-  
-  return {
-    success: true,
-    preview: false,
-    results: results,
-    message: `Import complete: ${results.created} created, ${results.updated} updated, ${results.failed} failed`
-  };
 }
 
 
@@ -358,6 +371,7 @@ function addStudent(student) {
   
   const sheet = SpreadsheetApp.getActive().getSheetByName("Students");
   const studentId = `STU${Date.now()}`;
+  const academicYear = getCurrentAcademicYear();
   
   sheet.appendRow([
     studentId,
@@ -370,7 +384,8 @@ function addStudent(student) {
     student.phone || "",
     new Date(),
     "Active",
-    student.electiveSubject || ""
+    student.electiveSubject || "",
+    academicYear
   ]);
   
   logAction("Add Student", `Added student: ${student.name} (Elective: ${student.electiveSubject || 'N/A'})`);
@@ -410,10 +425,12 @@ function updateStudent(studentId, updates) {
     updates.parentEmail || row[6],
     updates.phone || row[7],
     row[8],
-    updates.status || row[9]
+    updates.status || row[9],
+    updates.electiveSubject !== undefined ? updates.electiveSubject : (row[10] || ""),
+    updates.academicYear || row[11] || getCurrentAcademicYear()
   ];
   
-  sheet.getRange(rowIndex + 1, 1, 1, 10).setValues([updatedRow]);
+  sheet.getRange(rowIndex + 1, 1, 1, 12).setValues([updatedRow]);
   
   logAction("Update Student", `Updated student: ${studentId}`);
   
@@ -442,11 +459,15 @@ function deleteStudent(studentId) {
  */
 function getStudents(filters) {
   const sheet = SpreadsheetApp.getActive().getSheetByName("Students");
-  const data = sheet.getDataRange().getValues();
+  const lastRow = sheet.getLastRow();
   
-  if (data.length <= 1) return [];
+  if (lastRow <= 1) return [];
   
-  let students = data.slice(1).map(row => ({
+  // Single bulk read (no getDataRange in loops)
+  const data = sheet.getRange(2, 1, lastRow - 1, 12).getValues();
+  const currentYear = getCurrentAcademicYear();
+  
+  let students = data.map(row => ({
     studentId: row[0],
     name: row[1],
     class: row[2],
@@ -457,8 +478,9 @@ function getStudents(filters) {
     phone: row[7],
     joinDate: row[8],
     status: row[9],
-    electiveSubject: row[10] || ''
-  }));
+    electiveSubject: row[10] || '',
+    academicYear: row[11] || currentYear
+  })).filter(s => s.studentId);
   
   // Apply filters
   if (filters) {
@@ -476,6 +498,14 @@ function getStudents(filters) {
     } else {
       students = students.filter(s => s.status === "Active");
     }
+    if (filters.academicYear) {
+      students = students.filter(s => s.academicYear === filters.academicYear);
+    } else if (filters.academicYear !== null) {
+      // Default: filter by current academic year (null disables filter)
+      students = students.filter(s => s.academicYear === currentYear);
+    }
+  } else {
+    students = students.filter(s => s.status === "Active" && s.academicYear === currentYear);
   }
   
   // Apply teacher assignment filter (server-side)

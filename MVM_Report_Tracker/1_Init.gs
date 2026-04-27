@@ -62,7 +62,7 @@ function initializeApp() {
   const structure = {
     Students: [
       "StudentID", "Name", "Class", "Section", "Stream", 
-      "RollNo", "ParentEmail", "Phone", "JoinDate", "Status", "ElectiveSubject"
+      "RollNo", "ParentEmail", "Phone", "JoinDate", "Status", "ElectiveSubject", "AcademicYear"
     ],
     Teachers: [
       "TeacherID", "Name", "Subject", "Classes", "Sections", 
@@ -248,6 +248,116 @@ function seedDefaultSubjects() {
 
 
 /**
+ * Admin: Reset Subjects sheet to default (clears existing rows, reseeds defaults)
+ * Called from "Reset Subjects to Default" button
+ * @returns {Object} Result object
+ */
+function resetSubjectsToDefault() {
+  if (typeof isAdmin === 'function' && !isAdmin()) {
+    return { success: false, message: "Access denied. Admin privileges required." };
+  }
+
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+
+    const sheet = SpreadsheetApp.getActive().getSheetByName("Subjects");
+    if (!sheet) {
+      return { success: false, message: "Subjects sheet not found. Run Initialize App first." };
+    }
+
+    // Clear all rows except header
+    if (sheet.getLastRow() > 1) {
+      sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).clearContent();
+    }
+
+    // Re-seed defaults
+    seedDefaultSubjects();
+
+    // Invalidate cache
+    _invalidateSubjectsCache();
+
+    logAction("Reset Subjects", "Subjects sheet reset to defaults");
+
+    return { success: true, message: "Subjects sheet reset to default values." };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+
+/**
+ * Cached read of Subjects sheet (in-memory per execution)
+ * @returns {Array} Array of subject objects
+ */
+let _subjectsCache = null;
+function _getSubjectsCache() {
+  if (_subjectsCache !== null) return _subjectsCache;
+  const sheet = SpreadsheetApp.getActive().getSheetByName("Subjects");
+  if (!sheet || sheet.getLastRow() <= 1) {
+    _subjectsCache = [];
+    return _subjectsCache;
+  }
+  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 8).getValues();
+  _subjectsCache = data
+    .filter(row => row[0] && row[7] !== false)
+    .map(row => ({
+      subjectId: row[0],
+      subjectName: String(row[1] || "").trim(),
+      subjectCode: String(row[2] || "").trim(),
+      classes: String(row[3] || "").split(",").map(c => c.trim()).filter(Boolean),
+      stream: String(row[4] || "").trim(),
+      maxMarks: row[5],
+      passingMarks: row[6],
+      isActive: row[7]
+    }));
+  return _subjectsCache;
+}
+
+function _invalidateSubjectsCache() {
+  _subjectsCache = null;
+}
+
+
+/**
+ * Get list of valid subject names for a given student
+ * Mandatory subjects (class+stream) + Elective if matches student's elective
+ * @param {Object} student - { class, stream, electiveSubject }
+ * @returns {Array<string>} Valid subject names
+ */
+function getValidSubjectsForStudent(student) {
+  if (!student) return [];
+  const cls = String(student.class);
+  const stream = String(student.stream || "").trim();
+  const elective = String(student.electiveSubject || "").trim();
+  const cache = _getSubjectsCache();
+  const result = [];
+  cache.forEach(s => {
+    if (!s.classes.includes(cls)) return;
+    if (s.stream === stream) {
+      result.push(s.subjectName);
+    } else if (s.stream === "Elective" && elective && s.subjectName === elective) {
+      result.push(s.subjectName);
+    }
+  });
+  return result;
+}
+
+
+/**
+ * Check if a subject is valid for a given student
+ * @param {string} subject - Subject name
+ * @param {Object} student - Student object
+ * @returns {boolean}
+ */
+function isSubjectValidForStudent(subject, student) {
+  if (!subject || !student) return false;
+  const valid = getValidSubjectsForStudent(student);
+  return valid.indexOf(String(subject).trim()) !== -1;
+}
+
+
+/**
  * Seed default classes
  */
 function seedDefaultClasses() {
@@ -393,6 +503,7 @@ function onOpen() {
     .addSeparator()
     .addSubMenu(ui.createMenu('Admin')
       .addItem('Initialize App', 'initializeApp')
+      .addItem('Reset Subjects to Default', 'resetSubjectsToDefault')
       .addItem('Reset School Data', 'resetSchool')
       .addItem('Archive & Reset Year', 'archiveAndReset'))
     .addToUi();
@@ -630,6 +741,7 @@ function syncStudentsFromClassSheets() {
   
   const sections = ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11", "A12"];
   const classes = [11, 12];
+  const academicYear = getCurrentAcademicYear();
   
   let totalSynced = 0;
   let allStudents = [];
@@ -656,7 +768,8 @@ function syncStudentsFromClassSheets() {
               row[6] || "",         // Phone
               new Date(),           // JoinDate
               row[9] || "Active",   // Status
-              row[4] || ""          // ElectiveSubject
+              row[4] || "",         // ElectiveSubject
+              academicYear          // AcademicYear
             ]);
             totalSynced++;
           }
@@ -668,11 +781,11 @@ function syncStudentsFromClassSheets() {
   if (allStudents.length > 0) {
     // Clear existing data (keep header)
     if (mainSheet.getLastRow() > 1) {
-      mainSheet.getRange(2, 1, mainSheet.getLastRow() - 1, 11).clearContent();
+      mainSheet.getRange(2, 1, mainSheet.getLastRow() - 1, 12).clearContent();
     }
     
     // Write all students
-    mainSheet.getRange(2, 1, allStudents.length, 11).setValues(allStudents);
+    mainSheet.getRange(2, 1, allStudents.length, 12).setValues(allStudents);
   }
   
   logAction("Sync Students", `Synced ${totalSynced} students from class-wise sheets`);
