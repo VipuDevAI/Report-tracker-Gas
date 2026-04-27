@@ -242,12 +242,14 @@ function seedDefaultSubjects() {
     ["SUB323", "Economics",          "ECO",   "11,12", "Commerce", 100, 35, true, "", false],
     ["SUB324", "English",            "ENG",   "11,12", "Commerce", 100, 35, true, "L1", false],
 
-    // ==================== CLASS 11-12 — ELECTIVES (student picks ONE) ====================
+    // ==================== CLASS 11-12 — ELECTIVES (student picks ONE, available to all streams) ====================
     ["SUB331", "Mathematics",        "MATH",  "11,12", "Elective", 100, 35, true, "", true],
     ["SUB332", "Applied Mathematics","AMATH", "11,12", "Elective", 100, 35, true, "", true],
     ["SUB333", "Hindi",              "HIN",   "11,12", "Elective", 100, 35, true, "", true],
     ["SUB334", "History",            "HIST",  "11,12", "Elective", 100, 35, true, "", true],
-    ["SUB335", "Sanskrit",           "SANS",  "11,12", "Elective", 100, 35, true, "", true]
+    ["SUB335", "Sanskrit",           "SANS",  "11,12", "Elective", 100, 35, true, "", true],
+    ["SUB336", "Computer Science",   "CS",    "11,12", "Elective", 100, 35, true, "", true],
+    ["SUB337", "Biology",            "BIO",   "11,12", "Elective", 100, 35, true, "", true]
   ];
 
   if (sheet.getLastRow() <= 1) {

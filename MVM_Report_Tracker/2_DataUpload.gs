@@ -89,7 +89,7 @@ function bulkUploadStudents(data, options) {
       }
       
       // Validate elective for class 11 & 12
-      const validElectives = ['Mathematics', 'Applied Mathematics', 'Hindi', 'History', 'Sanskrit', ''];
+      const validElectives = ['Mathematics', 'Applied Mathematics', 'Hindi', 'History', 'Sanskrit', 'Computer Science', 'Biology', ''];
       if ((cls == '11' || cls == '12') && electiveSubject && !validElectives.includes(electiveSubject)) {
         results.failed++;
         results.errors.push({ row: rowIdx + 1, error: `Invalid elective: ${electiveSubject}` });
@@ -361,7 +361,7 @@ function addStudent(student) {
   }
   
   // Validate elective subject for class 11 & 12
-  const validElectives = ['Mathematics', 'Applied Mathematics', 'Hindi', 'History', 'Sanskrit'];
+  const validElectives = ['Mathematics', 'Applied Mathematics', 'Hindi', 'History', 'Sanskrit', 'Computer Science', 'Biology'];
   if ((student.class == 11 || student.class == 12) && student.electiveSubject) {
     if (!validElectives.includes(student.electiveSubject)) {
       return { success: false, message: "Invalid elective subject. Choose from: " + validElectives.join(", ") };
