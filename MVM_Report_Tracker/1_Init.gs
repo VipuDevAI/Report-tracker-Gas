@@ -21,20 +21,22 @@ const GRADE_RANGES = [
   ["F", 0, 40]
 ];
 
-// Streams configuration
+// Streams configuration (only for Class 11-12; 6-10 has no stream)
 const STREAMS = {
-  "9": ["Science", "Computer Science", "Commerce"],
-  "10": ["Science", "Computer Science", "Commerce"],
   "11": ["Science", "Computer Science", "Commerce"],
   "12": ["Science", "Computer Science", "Commerce"]
 };
 
-// Class sections - Different for 9-10 vs 11-12
-const SECTIONS_9_10 = ["A", "B", "C", "D"];
+// Class sections - All non-12th use A1-A11, 11-12 uses A1-A12
+const SECTIONS_6_10 = ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11"];
+const SECTIONS_9_10 = SECTIONS_6_10; // alias for backward compat
 const SECTIONS_11_12 = ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11", "A12"];
 
 // Legacy constant for backward compatibility
-const SECTIONS = ["A", "B", "C", "D"];
+const SECTIONS = SECTIONS_6_10;
+
+// Performance safety thresholds
+const MARKS_ROW_WARNING_THRESHOLD = 200000;
 
 /**
  * Get sections for a specific class
@@ -46,7 +48,8 @@ function getSectionsForClass(classNum) {
   if (cls === 11 || cls === 12) {
     return SECTIONS_11_12;
   }
-  return SECTIONS_9_10;
+  // 6, 7, 8, 9, 10 → A1-A11
+  return SECTIONS_6_10;
 }
 
 // Weak student threshold
@@ -62,7 +65,9 @@ function initializeApp() {
   const structure = {
     Students: [
       "StudentID", "Name", "Class", "Section", "Stream", 
-      "RollNo", "ParentEmail", "Phone", "JoinDate", "Status", "ElectiveSubject", "AcademicYear"
+      "RollNo", "ParentEmail", "Phone", "JoinDate", "Status",
+      "ElectiveSubject", "AcademicYear",
+      "LanguageL1", "LanguageL2", "LanguageL3"
     ],
     Teachers: [
       "TeacherID", "Name", "Subject", "Classes", "Sections", 
@@ -70,7 +75,7 @@ function initializeApp() {
     ],
     Subjects: [
       "SubjectID", "SubjectName", "SubjectCode", "Class", "Stream", 
-      "MaxMarks", "PassingMarks", "IsActive"
+      "MaxMarks", "PassingMarks", "IsActive", "LanguageGroup", "IsOptional"
     ],
     Classes: [
       "ClassID", "ClassName", "Sections", "Stream", "AcademicYear", "IsActive"
@@ -185,64 +190,68 @@ function seedDefaultSchoolSettings() {
 
 
 /**
- * Seed default subjects for all streams
+ * Seed default subjects for all classes (6-12)
+ * Schema: SubjectID, SubjectName, SubjectCode, Class, Stream, MaxMarks, PassingMarks, IsActive, LanguageGroup, IsOptional
+ * - Class 6-10: stream blank (common)
+ * - Class 11-12: stream-based (Science/Computer Science/Commerce/Elective)
+ * - LanguageGroup: "L1" | "L2" | "L3" | "L2,L3" (comma-sep slots a language is allowed in) — empty for non-languages
+ * - IsOptional: true if student can opt-in/swap (typically languages and electives)
  */
 function seedDefaultSubjects() {
   const sheet = SpreadsheetApp.getActive().getSheetByName("Subjects");
   
   const subjects = [
-    // Class 9 & 10 - Science
-    ["SUB001", "Mathematics", "MATH", "9,10", "Science", 100, 40, true],
-    ["SUB002", "Physics", "PHY", "9,10", "Science", 100, 40, true],
-    ["SUB003", "Chemistry", "CHEM", "9,10", "Science", 100, 40, true],
-    ["SUB004", "Biology", "BIO", "9,10", "Science", 100, 40, true],
-    ["SUB005", "English", "ENG", "9,10", "Science", 100, 40, true],
-    ["SUB006", "Hindi", "HIN", "9,10", "Science", 100, 40, true],
-    
-    // Class 9 & 10 - Computer Science
-    ["SUB007", "Mathematics", "MATH", "9,10", "Computer Science", 100, 40, true],
-    ["SUB008", "Computer Science", "CS", "9,10", "Computer Science", 100, 40, true],
-    ["SUB009", "Physics", "PHY", "9,10", "Computer Science", 100, 40, true],
-    ["SUB010", "English", "ENG", "9,10", "Computer Science", 100, 40, true],
-    ["SUB011", "Hindi", "HIN", "9,10", "Computer Science", 100, 40, true],
-    
-    // Class 9 & 10 - Commerce
-    ["SUB012", "Mathematics", "MATH", "9,10", "Commerce", 100, 40, true],
-    ["SUB013", "Business Studies", "BS", "9,10", "Commerce", 100, 40, true],
-    ["SUB014", "Economics", "ECO", "9,10", "Commerce", 100, 40, true],
-    ["SUB015", "English", "ENG", "9,10", "Commerce", 100, 40, true],
-    ["SUB016", "Hindi", "HIN", "9,10", "Commerce", 100, 40, true],
-    
-    // Class 11 & 12 - Science
-    ["SUB017", "Mathematics", "MATH", "11,12", "Science", 100, 40, true],
-    ["SUB018", "Physics", "PHY", "11,12", "Science", 100, 40, true],
-    ["SUB019", "Chemistry", "CHEM", "11,12", "Science", 100, 40, true],
-    ["SUB020", "Biology", "BIO", "11,12", "Science", 100, 40, true],
-    ["SUB021", "English", "ENG", "11,12", "Science", 100, 40, true],
-    
-    // Class 11 & 12 - Computer Science (Mandatory: Physics, Chemistry, CS, English)
-    ["SUB022", "Computer Science", "CS", "11,12", "Computer Science", 100, 40, true],
-    ["SUB023", "Physics", "PHY", "11,12", "Computer Science", 100, 40, true],
-    ["SUB024", "Chemistry", "CHEM", "11,12", "Computer Science", 100, 40, true],
-    ["SUB025", "English", "ENG", "11,12", "Computer Science", 100, 40, true],
-    
-    // Class 11 & 12 - Commerce (Mandatory: Accountancy, Business Studies, Economics, English)
-    ["SUB026", "Accountancy", "ACC", "11,12", "Commerce", 100, 40, true],
-    ["SUB027", "Business Studies", "BS", "11,12", "Commerce", 100, 40, true],
-    ["SUB028", "Economics", "ECO", "11,12", "Commerce", 100, 40, true],
-    ["SUB029", "English", "ENG", "11,12", "Commerce", 100, 40, true],
-    
-    // Class 11 & 12 - ELECTIVE SUBJECTS (Student chooses ONE)
-    // Maths/Applied Maths OR Hindi OR History OR Sanskrit
-    ["SUB030", "Mathematics", "MATH", "11,12", "Elective", 100, 40, true],
-    ["SUB031", "Applied Mathematics", "AMATH", "11,12", "Elective", 100, 40, true],
-    ["SUB032", "Hindi", "HIN", "11,12", "Elective", 100, 40, true],
-    ["SUB033", "History", "HIST", "11,12", "Elective", 100, 40, true],
-    ["SUB034", "Sanskrit", "SANS", "11,12", "Elective", 100, 40, true]
+    // ==================== CLASS 6-8 (no stream, 3-language system) ====================
+    // Mandatory non-language subjects
+    ["SUB101", "Mathematics",        "MATH",  "6,7,8", "", 100, 35, true, "",      false],
+    ["SUB102", "Science",            "SCI",   "6,7,8", "", 100, 35, true, "",      false],
+    ["SUB103", "Social Science",     "SST",   "6,7,8", "", 100, 35, true, "",      false],
+    ["SUB104", "Computer Application","COMP", "6,7,8", "", 100, 35, true, "",      false],
+    ["SUB105", "Art Education",      "ART",   "6,7,8", "", 100, 35, true, "",      false],
+    // Languages — student picks one per slot (L1 fixed English; L2/L3 from Hindi/Sanskrit/Tamil)
+    ["SUB110", "English",            "ENG",   "6,7,8", "", 100, 35, true, "L1",    false],
+    ["SUB111", "Hindi",              "HIN",   "6,7,8", "", 100, 35, true, "L2,L3", true],
+    ["SUB112", "Sanskrit",           "SANS",  "6,7,8", "", 100, 35, true, "L2,L3", true],
+    ["SUB113", "Tamil",              "TAM",   "6,7,8", "", 100, 35, true, "L2,L3", true],
+
+    // ==================== CLASS 9-10 (no stream, 2-language system) ====================
+    ["SUB201", "Mathematics",        "MATH",  "9,10", "", 100, 35, true, "",      false],
+    ["SUB202", "Science",            "SCI",   "9,10", "", 100, 35, true, "",      false],
+    ["SUB203", "Social Science",     "SST",   "9,10", "", 100, 35, true, "",      false],
+    ["SUB204", "Computer Application","COMP", "9,10", "", 100, 35, true, "",      false],
+    ["SUB210", "English",            "ENG",   "9,10", "", 100, 35, true, "L1",    false],
+    ["SUB211", "Hindi",              "HIN",   "9,10", "", 100, 35, true, "L2",    true],
+    ["SUB212", "Sanskrit",           "SANS",  "9,10", "", 100, 35, true, "L2",    true],
+    ["SUB213", "Tamil",              "TAM",   "9,10", "", 100, 35, true, "L2",    true],
+
+    // ==================== CLASS 11-12 — Science Stream ====================
+    ["SUB301", "Physics",            "PHY",   "11,12", "Science", 100, 35, true, "", false],
+    ["SUB302", "Chemistry",          "CHEM",  "11,12", "Science", 100, 35, true, "", false],
+    ["SUB303", "Biology",            "BIO",   "11,12", "Science", 100, 35, true, "", false],
+    ["SUB304", "English",            "ENG",   "11,12", "Science", 100, 35, true, "L1", false],
+
+    // ==================== CLASS 11-12 — Computer Science Stream ====================
+    ["SUB311", "Physics",            "PHY",   "11,12", "Computer Science", 100, 35, true, "", false],
+    ["SUB312", "Chemistry",          "CHEM",  "11,12", "Computer Science", 100, 35, true, "", false],
+    ["SUB313", "Computer Science",   "CS",    "11,12", "Computer Science", 100, 35, true, "", false],
+    ["SUB314", "English",            "ENG",   "11,12", "Computer Science", 100, 35, true, "L1", false],
+
+    // ==================== CLASS 11-12 — Commerce Stream ====================
+    ["SUB321", "Accountancy",        "ACC",   "11,12", "Commerce", 100, 35, true, "", false],
+    ["SUB322", "Business Studies",   "BS",    "11,12", "Commerce", 100, 35, true, "", false],
+    ["SUB323", "Economics",          "ECO",   "11,12", "Commerce", 100, 35, true, "", false],
+    ["SUB324", "English",            "ENG",   "11,12", "Commerce", 100, 35, true, "L1", false],
+
+    // ==================== CLASS 11-12 — ELECTIVES (student picks ONE) ====================
+    ["SUB331", "Mathematics",        "MATH",  "11,12", "Elective", 100, 35, true, "", true],
+    ["SUB332", "Applied Mathematics","AMATH", "11,12", "Elective", 100, 35, true, "", true],
+    ["SUB333", "Hindi",              "HIN",   "11,12", "Elective", 100, 35, true, "", true],
+    ["SUB334", "History",            "HIST",  "11,12", "Elective", 100, 35, true, "", true],
+    ["SUB335", "Sanskrit",           "SANS",  "11,12", "Elective", 100, 35, true, "", true]
   ];
 
   if (sheet.getLastRow() <= 1) {
-    sheet.getRange(2, 1, subjects.length, 8).setValues(subjects);
+    sheet.getRange(2, 1, subjects.length, 10).setValues(subjects);
   }
 }
 
@@ -288,6 +297,7 @@ function resetSubjectsToDefault() {
 
 /**
  * Cached read of Subjects sheet (in-memory per execution)
+ * Schema: SubjectID, SubjectName, SubjectCode, Class, Stream, MaxMarks, PassingMarks, IsActive, LanguageGroup, IsOptional
  * @returns {Array} Array of subject objects
  */
 let _subjectsCache = null;
@@ -298,7 +308,7 @@ function _getSubjectsCache() {
     _subjectsCache = [];
     return _subjectsCache;
   }
-  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 8).getValues();
+  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 10).getValues();
   _subjectsCache = data
     .filter(row => row[0] && row[7] !== false)
     .map(row => ({
@@ -309,7 +319,9 @@ function _getSubjectsCache() {
       stream: String(row[4] || "").trim(),
       maxMarks: row[5],
       passingMarks: row[6],
-      isActive: row[7]
+      isActive: row[7],
+      languageGroups: String(row[8] || "").split(",").map(g => g.trim()).filter(Boolean),
+      isOptional: row[9] === true
     }));
   return _subjectsCache;
 }
@@ -321,8 +333,12 @@ function _invalidateSubjectsCache() {
 
 /**
  * Get list of valid subject names for a given student
- * Mandatory subjects (class+stream) + Elective if matches student's elective
- * @param {Object} student - { class, stream, electiveSubject }
+ * Logic:
+ *   - All subjects matching (class, stream) where IsOptional=false AND no LanguageGroup → mandatory
+ *   - English (LanguageGroup includes "L1") → mandatory L1
+ *   - Student-chosen LanguageL2 / LanguageL3 → must match a subject with LanguageGroup containing "L2"/"L3"
+ *   - Class 11-12 with stream != Elective: also include the chosen ElectiveSubject if it exists in Subjects (stream="Elective")
+ * @param {Object} student - { class, stream, electiveSubject, languageL1, languageL2, languageL3 }
  * @returns {Array<string>} Valid subject names
  */
 function getValidSubjectsForStudent(student) {
@@ -330,17 +346,46 @@ function getValidSubjectsForStudent(student) {
   const cls = String(student.class);
   const stream = String(student.stream || "").trim();
   const elective = String(student.electiveSubject || "").trim();
+  const lang1 = String(student.languageL1 || "").trim();
+  const lang2 = String(student.languageL2 || "").trim();
+  const lang3 = String(student.languageL3 || "").trim();
   const cache = _getSubjectsCache();
-  const result = [];
+  const result = new Set();
+
   cache.forEach(s => {
     if (!s.classes.includes(cls)) return;
-    if (s.stream === stream) {
-      result.push(s.subjectName);
-    } else if (s.stream === "Elective" && elective && s.subjectName === elective) {
-      result.push(s.subjectName);
+
+    // For 6-10: stream is empty in Subjects (common). Match if subject stream is "" OR matches student stream.
+    // For 11-12: stream must match exactly (or "Elective" handled separately).
+    const isCommonClass = (cls === "6" || cls === "7" || cls === "8" || cls === "9" || cls === "10");
+    const streamOk = isCommonClass
+      ? (s.stream === "" || s.stream === stream)
+      : (s.stream === stream);
+
+    if (s.languageGroups.length > 0) {
+      // Language subject → match by student's chosen language slot
+      const isL1 = s.languageGroups.indexOf("L1") !== -1;
+      const isL2 = s.languageGroups.indexOf("L2") !== -1;
+      const isL3 = s.languageGroups.indexOf("L3") !== -1;
+      if (streamOk) {
+        if (isL1 && (!lang1 || s.subjectName === lang1)) result.add(s.subjectName);
+        if (isL2 && lang2 && s.subjectName === lang2) result.add(s.subjectName);
+        if (isL3 && lang3 && s.subjectName === lang3) result.add(s.subjectName);
+      }
+    } else if (s.stream === "Elective") {
+      // Elective subjects (11-12 only) — only valid if student picked it
+      if (elective && s.subjectName === elective) result.add(s.subjectName);
+    } else if (streamOk && !s.isOptional) {
+      // Mandatory subject for class+stream
+      result.add(s.subjectName);
+    } else if (streamOk && s.isOptional) {
+      // Optional but stream matches — allow (e.g., optional language alternates)
+      // Already handled by language block above; this catches non-language optionals
+      result.add(s.subjectName);
     }
   });
-  return result;
+
+  return Array.from(result);
 }
 
 
@@ -353,42 +398,45 @@ function getValidSubjectsForStudent(student) {
 function isSubjectValidForStudent(subject, student) {
   if (!subject || !student) return false;
   const valid = getValidSubjectsForStudent(student);
-  return valid.indexOf(String(subject).trim()) !== -1;
+  const target = String(subject).trim().toLowerCase();
+  return valid.some(v => String(v).trim().toLowerCase() === target);
 }
 
 
 /**
- * Seed default classes
+ * Seed default classes (6-12)
+ * Sections: 6-10 → A1-A11; 11-12 → A1-A12
  */
 function seedDefaultClasses() {
   const sheet = SpreadsheetApp.getActive().getSheetByName("Classes");
   
   const classes = [];
-  const streams = ["Science", "Computer Science", "Commerce"];
+  const academicYear = "2024-2025";
+  const sections6_10 = SECTIONS_6_10.join(",");
+  const sections11_12 = SECTIONS_11_12.join(",");
   
-  // Class 9 & 10 with sections A, B, C, D
-  for (let cls = 9; cls <= 10; cls++) {
-    streams.forEach((stream, idx) => {
-      classes.push([
-        `CLS${cls}${idx + 1}`,
-        `Class ${cls}`,
-        "A,B,C,D",
-        stream,
-        "2024-2025",
-        true
-      ]);
-    });
+  // Class 6-10: no stream (single common entry per class)
+  for (let cls = 6; cls <= 10; cls++) {
+    classes.push([
+      `CLS${cls}`,
+      `Class ${cls}`,
+      sections6_10,
+      "",  // no stream for 6-10
+      academicYear,
+      true
+    ]);
   }
   
-  // Class 11 & 12 with sections A1-A12
+  // Class 11-12 with stream-based entries
+  const streams = ["Science", "Computer Science", "Commerce"];
   for (let cls = 11; cls <= 12; cls++) {
     streams.forEach((stream, idx) => {
       classes.push([
         `CLS${cls}${idx + 1}`,
         `Class ${cls}`,
-        "A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12",
+        sections11_12,
         stream,
-        "2024-2025",
+        academicYear,
         true
       ]);
     });
@@ -505,7 +553,11 @@ function onOpen() {
       .addItem('Initialize App', 'initializeApp')
       .addItem('Reset Subjects to Default', 'resetSubjectsToDefault')
       .addItem('Reset School Data', 'resetSchool')
-      .addItem('Archive & Reset Year', 'archiveAndReset'))
+      .addSeparator()
+      .addItem('Archive Academic Year', 'showArchiveYearPrompt')
+      .addItem('Reset for New Academic Year', 'showResetNewYearPrompt')
+      .addItem('Switch Academic Year', 'showSwitchYearPrompt')
+      .addItem('Archive & Reset Year (Legacy)', 'archiveAndReset'))
     .addToUi();
 }
 
@@ -734,66 +786,254 @@ function createClassTeachersSheet() {
 
 /**
  * Sync students from class-wise sheets to main Students sheet
+ * Writes 15 cols (with AcademicYear + 3 language slots)
  */
 function syncStudentsFromClassSheets() {
-  const ss = SpreadsheetApp.getActive();
-  const mainSheet = ss.getSheetByName("Students");
-  
-  const sections = ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11", "A12"];
-  const classes = [11, 12];
-  const academicYear = getCurrentAcademicYear();
-  
-  let totalSynced = 0;
-  let allStudents = [];
-  
-  classes.forEach(cls => {
-    sections.forEach(section => {
-      const sheetName = `Students_${cls}_${section}`;
-      const sheet = ss.getSheetByName(sheetName);
-      
-      if (sheet && sheet.getLastRow() > 1) {
-        const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 10).getValues();
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+    
+    const ss = SpreadsheetApp.getActive();
+    const mainSheet = ss.getSheetByName("Students");
+    
+    const sections = SECTIONS_11_12;
+    const classes = [11, 12];
+    const academicYear = getCurrentAcademicYear();
+    
+    let totalSynced = 0;
+    let allStudents = [];
+    
+    classes.forEach(cls => {
+      sections.forEach(section => {
+        const sheetName = `Students_${cls}_${section}`;
+        const sheet = ss.getSheetByName(sheetName);
         
-        data.forEach((row, idx) => {
-          if (row[1]) { // If name exists
-            const studentId = `STU${cls}${section}${String(idx + 1).padStart(3, '0')}`;
-            allStudents.push([
-              studentId,
-              row[1],  // Name
-              cls,     // Class
-              section, // Section
-              row[3] || "Science",  // Stream
-              row[2] || idx + 1,    // RollNo
-              row[7] || "",         // ParentEmail
-              row[6] || "",         // Phone
-              new Date(),           // JoinDate
-              row[9] || "Active",   // Status
-              row[4] || "",         // ElectiveSubject
-              academicYear          // AcademicYear
-            ]);
-            totalSynced++;
-          }
-        });
-      }
+        if (sheet && sheet.getLastRow() > 1) {
+          const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 10).getValues();
+          
+          data.forEach((row, idx) => {
+            if (row[1]) { // If name exists
+              const studentId = `STU${cls}${section}${String(idx + 1).padStart(3, '0')}`;
+              allStudents.push([
+                studentId,
+                row[1],  // Name
+                cls,     // Class
+                section, // Section
+                row[3] || "Science",  // Stream
+                row[2] || idx + 1,    // RollNo
+                row[7] || "",         // ParentEmail
+                row[6] || "",         // Phone
+                new Date(),           // JoinDate
+                row[9] || "Active",   // Status
+                row[4] || "",         // ElectiveSubject
+                academicYear,         // AcademicYear
+                "English",            // LanguageL1
+                "",                   // LanguageL2
+                ""                    // LanguageL3
+              ]);
+              totalSynced++;
+            }
+          });
+        }
+      });
     });
-  });
-  
-  if (allStudents.length > 0) {
-    // Clear existing data (keep header)
-    if (mainSheet.getLastRow() > 1) {
-      mainSheet.getRange(2, 1, mainSheet.getLastRow() - 1, 12).clearContent();
+    
+    if (allStudents.length > 0) {
+      // Clear existing data (keep header)
+      if (mainSheet.getLastRow() > 1) {
+        mainSheet.getRange(2, 1, mainSheet.getLastRow() - 1, 15).clearContent();
+      }
+      
+      // Write all students
+      mainSheet.getRange(2, 1, allStudents.length, 15).setValues(allStudents);
     }
     
-    // Write all students
-    mainSheet.getRange(2, 1, allStudents.length, 12).setValues(allStudents);
+    logAction("Sync Students", `Synced ${totalSynced} students from class-wise sheets`);
+    
+    return {
+      success: true,
+      message: `Synced ${totalSynced} students from class-wise sheets to main Students sheet`
+    };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
   }
-  
-  logAction("Sync Students", `Synced ${totalSynced} students from class-wise sheets`);
-  
+}
+
+
+/**
+ * Get count of rows in Marks_Master (for performance safety warning)
+ * @returns {Object} { count, threshold, warning, message }
+ */
+function getMarksRowCount() {
+  const sheet = SpreadsheetApp.getActive().getSheetByName("Marks_Master");
+  if (!sheet) return { count: 0, threshold: MARKS_ROW_WARNING_THRESHOLD, warning: false };
+  const count = Math.max(0, sheet.getLastRow() - 1);
+  const warning = count >= MARKS_ROW_WARNING_THRESHOLD;
   return {
-    success: true,
-    message: `Synced ${totalSynced} students from class-wise sheets to main Students sheet`
+    count: count,
+    threshold: MARKS_ROW_WARNING_THRESHOLD,
+    warning: warning,
+    message: warning
+      ? `Warning: Marks_Master has ${count} rows (threshold: ${MARKS_ROW_WARNING_THRESHOLD}). Consider running Year-End Archive to keep performance optimal.`
+      : `Marks_Master: ${count} rows (well within ${MARKS_ROW_WARNING_THRESHOLD} threshold).`
   };
+}
+
+
+/**
+ * Year-End: Archive academic year data to a separate spreadsheet
+ * Exports Students, Marks_Master, Exams (filtered by year)
+ * @param {string} year - Academic year to archive (e.g., "2024-2025")
+ * @returns {Object} Result with archive URL
+ */
+function archiveAcademicYear(year) {
+  if (!isAdmin()) {
+    return { success: false, message: "Access denied. Admin privileges required." };
+  }
+  if (!year) {
+    return { success: false, message: "Academic year is required." };
+  }
+
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+
+    const ss = SpreadsheetApp.getActive();
+    const safeYear = String(year).replace(/[^0-9A-Za-z\-]/g, '_');
+    const stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyyMMdd_HHmm");
+    const archiveName = `MVM_Archive_${safeYear}_${stamp}`;
+    const archiveSS = SpreadsheetApp.create(archiveName);
+
+    // Copy Students for this year
+    const studentsSheet = ss.getSheetByName("Students");
+    if (studentsSheet && studentsSheet.getLastRow() > 1) {
+      const data = studentsSheet.getRange(1, 1, studentsSheet.getLastRow(), 15).getValues();
+      const filtered = [data[0]].concat(data.slice(1).filter(r => String(r[11]) === String(year)));
+      const target = archiveSS.insertSheet("Students");
+      if (filtered.length > 0) target.getRange(1, 1, filtered.length, 15).setValues(filtered);
+    }
+
+    // Copy Marks_Master for this year
+    const marksSheet = ss.getSheetByName("Marks_Master");
+    if (marksSheet && marksSheet.getLastRow() > 1) {
+      const data = marksSheet.getRange(1, 1, marksSheet.getLastRow(), 18).getValues();
+      const filtered = [data[0]].concat(data.slice(1).filter(r => String(r[17]) === String(year)));
+      const target = archiveSS.insertSheet("Marks_Master");
+      if (filtered.length > 0) target.getRange(1, 1, filtered.length, 18).setValues(filtered);
+    }
+
+    // Copy Exams for this year
+    const examsSheet = ss.getSheetByName("Exams");
+    if (examsSheet && examsSheet.getLastRow() > 1) {
+      const data = examsSheet.getRange(1, 1, examsSheet.getLastRow(), 18).getValues();
+      const filtered = [data[0]].concat(data.slice(1).filter(r => String(r[11]) === String(year)));
+      const target = archiveSS.insertSheet("Exams");
+      if (filtered.length > 0) target.getRange(1, 1, filtered.length, 18).setValues(filtered);
+    }
+
+    // Drop default sheet "Sheet1"
+    const defaultSheet = archiveSS.getSheetByName("Sheet1");
+    if (defaultSheet && archiveSS.getSheets().length > 1) archiveSS.deleteSheet(defaultSheet);
+
+    logAction("Archive Year", `Archived ${year} -> ${archiveSS.getUrl()}`);
+
+    return {
+      success: true,
+      url: archiveSS.getUrl(),
+      fileName: archiveName,
+      message: `Year ${year} archived successfully.`
+    };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+
+/**
+ * Year-End: Reset Marks_Master and Exams for new academic year (keeps Students)
+ * @param {string} newYear - New academic year (e.g., "2025-2026")
+ * @returns {Object} Result
+ */
+function resetForNewYear(newYear) {
+  if (!isAdmin()) {
+    return { success: false, message: "Access denied. Admin privileges required." };
+  }
+  if (!newYear) {
+    return { success: false, message: "New academic year is required." };
+  }
+
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+
+    const ss = SpreadsheetApp.getActive();
+
+    const marksSheet = ss.getSheetByName("Marks_Master");
+    if (marksSheet && marksSheet.getLastRow() > 1) {
+      marksSheet.getRange(2, 1, marksSheet.getLastRow() - 1, marksSheet.getLastColumn()).clearContent();
+    }
+
+    const examsSheet = ss.getSheetByName("Exams");
+    if (examsSheet && examsSheet.getLastRow() > 1) {
+      examsSheet.getRange(2, 1, examsSheet.getLastRow() - 1, examsSheet.getLastColumn()).clearContent();
+    }
+
+    const aggSheet = ss.getSheetByName("Aggregates");
+    if (aggSheet && aggSheet.getLastRow() > 1) {
+      aggSheet.getRange(2, 1, aggSheet.getLastRow() - 1, aggSheet.getLastColumn()).clearContent();
+    }
+
+    switchAcademicYear(newYear);
+
+    logAction("Reset For New Year", `Cleared Marks/Exams; set academic year = ${newYear}`);
+
+    return {
+      success: true,
+      message: `Reset complete. New academic year is ${newYear}. Students preserved (use Promote Students to advance class).`
+    };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+
+/**
+ * Switch the active academic year in Settings_School
+ * @param {string} newYear
+ * @returns {Object} Result
+ */
+function switchAcademicYear(newYear) {
+  if (!isAdmin()) {
+    return { success: false, message: "Access denied. Admin privileges required." };
+  }
+  if (!newYear) {
+    return { success: false, message: "New academic year is required." };
+  }
+
+  const sheet = SpreadsheetApp.getActive().getSheetByName("Settings_School");
+  if (!sheet) {
+    return { success: false, message: "Settings_School sheet not found. Run Initialize App first." };
+  }
+
+  const data = sheet.getDataRange().getValues();
+  let foundRow = -1;
+  for (let i = 0; i < data.length; i++) {
+    if (data[i][0] === "AcademicYear") {
+      foundRow = i + 1;
+      break;
+    }
+  }
+
+  if (foundRow > 0) {
+    sheet.getRange(foundRow, 2).setValue(newYear);
+    sheet.getRange(foundRow, 3).setValue(new Date());
+  } else {
+    sheet.appendRow(["AcademicYear", newYear, new Date()]);
+  }
+
+  logAction("Switch Academic Year", `Active academic year set to ${newYear}`);
+
+  return { success: true, message: `Active academic year is now ${newYear}.` };
 }
 
 
@@ -847,4 +1087,62 @@ function syncTeachersFromMaster() {
     success: true,
     message: `Synced ${allTeachers.length} teachers from Teachers_Master sheet`
   };
+}
+
+
+
+/**
+ * Menu helper: Prompt admin for academic year to archive
+ */
+function showArchiveYearPrompt() {
+  const ui = SpreadsheetApp.getUi();
+  const current = getCurrentAcademicYear();
+  const resp = ui.prompt(
+    'Archive Academic Year',
+    `Enter the academic year to archive (default: ${current}). A new spreadsheet will be created with that year's Students, Marks, and Exams.`,
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (resp.getSelectedButton() !== ui.Button.OK) return;
+  const year = resp.getResponseText().trim() || current;
+  const result = archiveAcademicYear(year);
+  ui.alert(result.success ? `Archived: ${result.url}` : `Error: ${result.message}`);
+}
+
+
+/**
+ * Menu helper: Prompt admin for new year to reset to
+ */
+function showResetNewYearPrompt() {
+  const ui = SpreadsheetApp.getUi();
+  const resp = ui.prompt(
+    'Reset for New Academic Year',
+    'This will CLEAR Marks_Master, Exams, and Aggregates (Students preserved). Enter the NEW academic year (e.g., 2025-2026):',
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (resp.getSelectedButton() !== ui.Button.OK) return;
+  const newYear = resp.getResponseText().trim();
+  if (!newYear) { ui.alert('Cancelled — no year entered.'); return; }
+  const confirm = ui.alert('Confirm', `Clear Marks/Exams and switch to ${newYear}? This cannot be undone (run Archive first).`, ui.ButtonSet.YES_NO);
+  if (confirm !== ui.Button.YES) return;
+  const result = resetForNewYear(newYear);
+  ui.alert(result.message);
+}
+
+
+/**
+ * Menu helper: Prompt admin to switch academic year (no data clearing)
+ */
+function showSwitchYearPrompt() {
+  const ui = SpreadsheetApp.getUi();
+  const current = getCurrentAcademicYear();
+  const resp = ui.prompt(
+    'Switch Academic Year',
+    `Current: ${current}. Enter the academic year to switch to (e.g., 2025-2026):`,
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (resp.getSelectedButton() !== ui.Button.OK) return;
+  const newYear = resp.getResponseText().trim();
+  if (!newYear) { ui.alert('Cancelled.'); return; }
+  const result = switchAcademicYear(newYear);
+  ui.alert(result.message);
 }

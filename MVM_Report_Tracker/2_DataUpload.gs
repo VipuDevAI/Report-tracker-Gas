@@ -29,17 +29,16 @@ function bulkUploadStudents(data, options) {
     
     const sheet = SpreadsheetApp.getActive().getSheetByName("Students");
     const lastRow = sheet.getLastRow();
-    const lastCol = Math.max(sheet.getLastColumn(), 12);
+    const lastCol = Math.max(sheet.getLastColumn(), 15);
     const existingData = lastRow > 0
       ? sheet.getRange(1, 1, lastRow, lastCol).getValues()
       : [[]];
     const academicYear = getCurrentAcademicYear();
     
-    // Build index of existing students (class-section-rollno as key)
     const existingIndex = {};
     const existingIdIndex = {};
     existingData.slice(1).forEach((row, idx) => {
-      const key = `${row[2]}-${row[3]}-${row[5]}`; // class-section-rollno
+      const key = `${row[2]}-${row[3]}-${row[5]}`;
       existingIndex[key] = { row: row, index: idx + 2 };
       if (row[0]) existingIdIndex[row[0]] = { row: row, index: idx + 2 };
     });
@@ -62,16 +61,21 @@ function bulkUploadStudents(data, options) {
         return;
       }
       
+      // Input columns: StudentID, Name, Class, Section, Stream, RollNo, Status, ElectiveSubject, LanguageL1, LanguageL2, LanguageL3, ParentEmail, Phone
       const studentId = row[0] || `STU${Date.now()}${rowIdx}`;
       const name = row[1] || "";
       const cls = String(row[2] || "");
-      const section = row[3] || "A";
-      const stream = row[4] || "Science";
+      const section = row[3] || "A1";
+      const stream = row[4] || "";
       const rollNo = row[5] || rowIdx;
       const status = row[6] || "Active";
       const electiveSubject = row[7] || "";
+      const langL1 = row[8] || "English";
+      const langL2 = row[9] || "";
+      const langL3 = row[10] || "";
+      const parentEmail = row[11] || "";
+      const phone = row[12] || "";
       
-      // Validation
       if (!name) {
         results.failed++;
         results.errors.push({ row: rowIdx + 1, error: "Name is required" });
@@ -88,11 +92,10 @@ function bulkUploadStudents(data, options) {
       const validElectives = ['Mathematics', 'Applied Mathematics', 'Hindi', 'History', 'Sanskrit', ''];
       if ((cls == '11' || cls == '12') && electiveSubject && !validElectives.includes(electiveSubject)) {
         results.failed++;
-        results.errors.push({ row: rowIdx + 1, error: `Invalid elective: ${electiveSubject}. Use: Mathematics, Applied Mathematics, Hindi, History, or Sanskrit` });
+        results.errors.push({ row: rowIdx + 1, error: `Invalid elective: ${electiveSubject}` });
         return;
       }
       
-      // Check for duplicates (same class + section + roll no)
       const key = `${cls}-${section}-${rollNo}`;
       const existingByKey = existingIndex[key];
       const existingById = existingIdIndex[studentId];
@@ -104,12 +107,15 @@ function bulkUploadStudents(data, options) {
         section,
         stream,
         rollNo,
-        "",  // parentEmail
-        "",  // phone
+        parentEmail,
+        phone,
         new Date(),
         status,
         electiveSubject,
-        academicYear
+        academicYear,
+        langL1,
+        langL2,
+        langL3
       ];
       
       if (existingByKey || existingById) {
@@ -123,11 +129,7 @@ function bulkUploadStudents(data, options) {
           results.updated++;
         } else {
           results.duplicates.push({
-            row: rowIdx + 1,
-            name: name,
-            class: cls,
-            section: section,
-            rollNo: rollNo
+            row: rowIdx + 1, name: name, class: cls, section: section, rollNo: rollNo
           });
           results.failed++;
         }
@@ -147,7 +149,6 @@ function bulkUploadStudents(data, options) {
       });
     });
     
-    // If preview only, return without writing
     if (previewOnly) {
       return {
         success: true,
@@ -157,15 +158,13 @@ function bulkUploadStudents(data, options) {
       };
     }
     
-    // Write new students (batch)
     if (toCreate.length > 0) {
       const writeRow = sheet.getLastRow() + 1;
-      sheet.getRange(writeRow, 1, toCreate.length, 12).setValues(toCreate);
+      sheet.getRange(writeRow, 1, toCreate.length, 15).setValues(toCreate);
     }
     
-    // Update existing students (batch by individual row)
     toUpdate.forEach(item => {
-      sheet.getRange(item.rowIndex, 1, 1, 12).setValues([item.data]);
+      sheet.getRange(item.rowIndex, 1, 1, 15).setValues([item.data]);
     });
     
     logAction("Bulk Upload Students", `Created: ${results.created}, Updated: ${results.updated}, Failed: ${results.failed}`);
@@ -369,28 +368,38 @@ function addStudent(student) {
     }
   }
   
-  const sheet = SpreadsheetApp.getActive().getSheetByName("Students");
-  const studentId = `STU${Date.now()}`;
-  const academicYear = getCurrentAcademicYear();
-  
-  sheet.appendRow([
-    studentId,
-    student.name,
-    student.class,
-    student.section || "A",
-    student.stream || "Science",
-    student.rollNo || sheet.getLastRow(),
-    student.parentEmail || "",
-    student.phone || "",
-    new Date(),
-    "Active",
-    student.electiveSubject || "",
-    academicYear
-  ]);
-  
-  logAction("Add Student", `Added student: ${student.name} (Elective: ${student.electiveSubject || 'N/A'})`);
-  
-  return { success: true, message: "Student added successfully!", studentId: studentId };
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+    
+    const sheet = SpreadsheetApp.getActive().getSheetByName("Students");
+    const studentId = `STU${Date.now()}`;
+    const academicYear = getCurrentAcademicYear();
+    
+    sheet.appendRow([
+      studentId,
+      student.name,
+      student.class,
+      student.section || "A1",
+      student.stream || "",
+      student.rollNo || sheet.getLastRow(),
+      student.parentEmail || "",
+      student.phone || "",
+      new Date(),
+      "Active",
+      student.electiveSubject || "",
+      academicYear,
+      student.languageL1 || "English",
+      student.languageL2 || "",
+      student.languageL3 || ""
+    ]);
+    
+    logAction("Add Student", `Added student: ${student.name} (Class ${student.class})`);
+    
+    return { success: true, message: "Student added successfully!", studentId: studentId };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
 }
 
 
@@ -405,36 +414,51 @@ function updateStudent(studentId, updates) {
     return { success: false, message: "Access denied. Admin privileges required." };
   }
   
-  const sheet = SpreadsheetApp.getActive().getSheetByName("Students");
-  const data = sheet.getDataRange().getValues();
-  
-  const rowIndex = data.findIndex(r => r[0] === studentId);
-  
-  if (rowIndex === -1) {
-    return { success: false, message: "Student not found." };
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+    
+    const sheet = SpreadsheetApp.getActive().getSheetByName("Students");
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return { success: false, message: "Student not found." };
+    const data = sheet.getRange(2, 1, lastRow - 1, 15).getValues();
+    
+    let foundIdx = -1;
+    for (let i = 0; i < data.length; i++) {
+      if (data[i][0] === studentId) { foundIdx = i; break; }
+    }
+    
+    if (foundIdx === -1) {
+      return { success: false, message: "Student not found." };
+    }
+    
+    const row = data[foundIdx];
+    const updatedRow = [
+      studentId,
+      updates.name || row[1],
+      updates.class || row[2],
+      updates.section || row[3],
+      updates.stream !== undefined ? updates.stream : row[4],
+      updates.rollNo || row[5],
+      updates.parentEmail !== undefined ? updates.parentEmail : row[6],
+      updates.phone !== undefined ? updates.phone : row[7],
+      row[8],
+      updates.status || row[9],
+      updates.electiveSubject !== undefined ? updates.electiveSubject : (row[10] || ""),
+      updates.academicYear || row[11] || getCurrentAcademicYear(),
+      updates.languageL1 !== undefined ? updates.languageL1 : (row[12] || ""),
+      updates.languageL2 !== undefined ? updates.languageL2 : (row[13] || ""),
+      updates.languageL3 !== undefined ? updates.languageL3 : (row[14] || "")
+    ];
+    
+    sheet.getRange(foundIdx + 2, 1, 1, 15).setValues([updatedRow]);
+    
+    logAction("Update Student", `Updated student: ${studentId}`);
+    
+    return { success: true, message: "Student updated successfully!" };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
   }
-  
-  const row = data[rowIndex];
-  const updatedRow = [
-    studentId,
-    updates.name || row[1],
-    updates.class || row[2],
-    updates.section || row[3],
-    updates.stream || row[4],
-    updates.rollNo || row[5],
-    updates.parentEmail || row[6],
-    updates.phone || row[7],
-    row[8],
-    updates.status || row[9],
-    updates.electiveSubject !== undefined ? updates.electiveSubject : (row[10] || ""),
-    updates.academicYear || row[11] || getCurrentAcademicYear()
-  ];
-  
-  sheet.getRange(rowIndex + 1, 1, 1, 12).setValues([updatedRow]);
-  
-  logAction("Update Student", `Updated student: ${studentId}`);
-  
-  return { success: true, message: "Student updated successfully!" };
 }
 
 
@@ -464,7 +488,7 @@ function getStudents(filters) {
   if (lastRow <= 1) return [];
   
   // Single bulk read (no getDataRange in loops)
-  const data = sheet.getRange(2, 1, lastRow - 1, 12).getValues();
+  const data = sheet.getRange(2, 1, lastRow - 1, 15).getValues();
   const currentYear = getCurrentAcademicYear();
   
   let students = data.map(row => ({
@@ -479,7 +503,10 @@ function getStudents(filters) {
     joinDate: row[8],
     status: row[9],
     electiveSubject: row[10] || '',
-    academicYear: row[11] || currentYear
+    academicYear: row[11] || currentYear,
+    languageL1: row[12] || '',
+    languageL2: row[13] || '',
+    languageL3: row[14] || ''
   })).filter(s => s.studentId);
   
   // Apply filters
@@ -501,8 +528,15 @@ function getStudents(filters) {
     if (filters.academicYear) {
       students = students.filter(s => s.academicYear === filters.academicYear);
     } else if (filters.academicYear !== null) {
-      // Default: filter by current academic year (null disables filter)
       students = students.filter(s => s.academicYear === currentYear);
+    }
+    if (filters.search) {
+      const q = String(filters.search).toLowerCase();
+      students = students.filter(s =>
+        String(s.name || '').toLowerCase().includes(q) ||
+        String(s.studentId || '').toLowerCase().includes(q) ||
+        String(s.rollNo || '').toLowerCase().includes(q)
+      );
     }
   } else {
     students = students.filter(s => s.status === "Active" && s.academicYear === currentYear);
@@ -512,6 +546,30 @@ function getStudents(filters) {
   students = applyTeacherFilter(students, { filterBySubject: false });
   
   return students;
+}
+
+
+/**
+ * Server-side paginated getStudents
+ * @param {Object} filters - Same filters as getStudents + { search }
+ * @param {number} page - 1-indexed page number (default 1)
+ * @param {number} limit - Rows per page (default 100)
+ * @returns {Object} { data, total, page, limit, totalPages }
+ */
+function getStudentsPage(filters, page, limit) {
+  const all = getStudents(filters);
+  const total = all.length;
+  const lim = Math.max(1, parseInt(limit) || 100);
+  const totalPages = Math.max(1, Math.ceil(total / lim));
+  const pg = Math.min(Math.max(1, parseInt(page) || 1), totalPages);
+  const start = (pg - 1) * lim;
+  return {
+    data: all.slice(start, start + lim),
+    total: total,
+    page: pg,
+    limit: lim,
+    totalPages: totalPages
+  };
 }
 
 
@@ -640,11 +698,13 @@ function getTeachers(filters) {
  */
 function getSubjects(filters) {
   const sheet = SpreadsheetApp.getActive().getSheetByName("Subjects");
-  const data = sheet.getDataRange().getValues();
+  const lastRow = sheet.getLastRow();
   
-  if (data.length <= 1) return [];
+  if (lastRow <= 1) return [];
   
-  let subjects = data.slice(1).map(row => ({
+  const data = sheet.getRange(2, 1, lastRow - 1, 10).getValues();
+  
+  let subjects = data.map(row => ({
     subjectId: row[0],
     subjectName: row[1],
     subjectCode: row[2],
@@ -652,12 +712,14 @@ function getSubjects(filters) {
     stream: row[4],
     maxMarks: row[5],
     passingMarks: row[6],
-    isActive: row[7]
-  }));
+    isActive: row[7],
+    languageGroup: row[8] || '',
+    isOptional: row[9] === true
+  })).filter(s => s.subjectId);
   
   if (filters) {
     if (filters.class) {
-      subjects = subjects.filter(s => s.classes.includes(filters.class));
+      subjects = subjects.filter(s => String(s.classes).split(',').map(c => c.trim()).includes(String(filters.class)));
     }
     if (filters.stream) {
       subjects = subjects.filter(s => s.stream === filters.stream);
@@ -711,7 +773,7 @@ function getClasses(filters) {
  * @returns {Array} Unique class numbers
  */
 function getClassNumbers() {
-  return ["9", "10", "11", "12"];
+  return ["6", "7", "8", "9", "10", "11", "12"];
 }
 
 
@@ -720,7 +782,7 @@ function getClassNumbers() {
  * @returns {Array} Available sections
  */
 function getSections() {
-  return ["A", "B", "C", "D"];
+  return ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11"];
 }
 
 
@@ -734,50 +796,100 @@ function getStreams() {
 
 
 /**
- * Auto promote students to next class
- * @param {string} fromYear - Source academic year
+ * Auto-promote students 6 → 7 → 8 → 9 → 10 → 11 → 12
+ * Section is preserved unless changed by admin afterwards.
+ * Class 12 students are marked Alumni (graduated).
+ * @param {string} fromYear - Source academic year (informational, used in log)
  * @param {string} toYear - Target academic year
+ * @param {Object} options - { resetRollNumbers: boolean }
  * @returns {Object} Result object
  */
-function promoteStudents(fromYear, toYear) {
+function promoteStudents(fromYear, toYear, options) {
   if (!isAdmin()) {
     return { success: false, message: "Access denied. Admin privileges required." };
   }
+  if (!toYear) {
+    return { success: false, message: "Target academic year is required." };
+  }
   
-  const sheet = SpreadsheetApp.getActive().getSheetByName("Students");
-  const data = sheet.getDataRange().getValues();
+  const opts = options || {};
+  const resetRoll = opts.resetRollNumbers === true;
   
-  let promoted = 0;
-  let graduated = 0;
-  
-  data.forEach((row, idx) => {
-    if (idx === 0) return; // Skip header
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
     
-    const currentClass = parseInt(row[2]);
-    if (isNaN(currentClass)) return;
+    const sheet = SpreadsheetApp.getActive().getSheetByName("Students");
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return { success: true, message: "No students to promote.", promoted: 0, graduated: 0 };
     
-    if (currentClass >= 12) {
-      // Graduate (mark as Alumni)
-      sheet.getRange(idx + 1, 10).setValue("Alumni");
-      graduated++;
-    } else {
-      // Promote to next class
-      sheet.getRange(idx + 1, 3).setValue(currentClass + 1);
-      promoted++;
+    const data = sheet.getRange(2, 1, lastRow - 1, 15).getValues();
+    
+    let promoted = 0;
+    let graduated = 0;
+    let skipped = 0;
+    
+    // Group by class+section for roll number reset
+    const rollCounters = {};
+    
+    // Build new data array (sorted by class then section then current rollno for stable roll reset)
+    const updatedData = data.map(row => row.slice());
+    
+    // First pass: promote/graduate
+    updatedData.forEach(row => {
+      const currentClass = parseInt(row[2]);
+      const status = String(row[9] || "").trim();
+      if (status !== "Active") { skipped++; return; }
+      if (isNaN(currentClass)) { skipped++; return; }
+      
+      if (currentClass >= 12) {
+        row[9] = "Alumni";
+        graduated++;
+      } else if (currentClass >= 6 && currentClass <= 11) {
+        row[2] = currentClass + 1;
+        row[11] = toYear; // AcademicYear updated
+        promoted++;
+      } else {
+        skipped++;
+      }
+    });
+    
+    // Second pass: reset roll numbers if requested
+    if (resetRoll) {
+      // Sort active students by class+section+oldRoll for stable order
+      const indexed = updatedData
+        .map((row, idx) => ({ row, idx }))
+        .filter(x => x.row[9] === "Active")
+        .sort((a, b) => {
+          if (a.row[2] !== b.row[2]) return parseInt(a.row[2]) - parseInt(b.row[2]);
+          if (a.row[3] !== b.row[3]) return String(a.row[3]).localeCompare(String(b.row[3]));
+          return parseInt(a.row[5]) - parseInt(b.row[5]);
+        });
+      indexed.forEach(item => {
+        const key = `${item.row[2]}-${item.row[3]}`;
+        rollCounters[key] = (rollCounters[key] || 0) + 1;
+        item.row[5] = rollCounters[key];
+      });
     }
-  });
-  
-  // Update academic year in settings
-  updateSchoolSetting("AcademicYear", toYear);
-  
-  logAction("Promote Students", `Promoted: ${promoted}, Graduated: ${graduated}`);
-  
-  return {
-    success: true,
-    message: `Promotion complete: ${promoted} promoted, ${graduated} graduated`,
-    promoted: promoted,
-    graduated: graduated
-  };
+    
+    // Write back in one batch
+    sheet.getRange(2, 1, updatedData.length, 15).setValues(updatedData);
+    
+    // Update setting
+    updateSchoolSetting("AcademicYear", toYear);
+    
+    logAction("Promote Students", `From ${fromYear || '?'} to ${toYear}: Promoted ${promoted}, Graduated ${graduated}, Skipped ${skipped}${resetRoll ? ' (rolls reset)' : ''}`);
+    
+    return {
+      success: true,
+      message: `Promotion complete: ${promoted} promoted, ${graduated} graduated, ${skipped} skipped${resetRoll ? ' (roll numbers reset)' : ''}`,
+      promoted: promoted,
+      graduated: graduated,
+      skipped: skipped
+    };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
 }
 
 

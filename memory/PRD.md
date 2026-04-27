@@ -1,87 +1,144 @@
 # MVM Report Tracker - Product Requirements Document
 
 ## Overview
-MVM Report Tracker is a Google Apps Script-based school report tracking system that runs entirely within Google Sheets. It provides a comprehensive dashboard for managing students, teachers, exams, marks, and generating report cards. Currently being stabilized to scale to **4,000 students + 200 teachers**.
+MVM Report Tracker is a Google Apps Script-based school report tracking system that runs entirely within Google Sheets. Designed to scale to **4,000 students + 200 teachers** for a full academic year without data corruption, duplicates, or performance issues.
 
 ## Original Problem Statement
 Build a complete school report tracking system based on provided Google Apps Script files, featuring:
 - Role-based access control (Admin/Teacher)
-- Student and teacher management
-- Exam creation and marks entry
-- Analytics and reporting
-- Report card generation
-- Bulk data upload capabilities
+- Student, teacher, exam, and marks management for Classes 6-12
+- Analytics, reporting, and report card generation
+- Bulk data upload
+- Stable, optimized, config-driven architecture
 
 ## Technical Architecture
 - **Platform**: Google Apps Script (GAS)
-- **Database**: Google Sheets (acts as database)
-- **UI**: Single Dashboard.html file served via HtmlService
-- **Authentication**: Custom HTML email-based login + PropertiesService (bypasses Google account identity sharing limitations)
+- **Database**: Google Sheets (single unified `Marks_Master` — NOT split per class)
+- **UI**: Single Dashboard.html via HtmlService
+- **Authentication**: Custom HTML email-based login + PropertiesService
 
 ## Project Structure
 ```
 /app/MVM_Report_Tracker/
-├── 0_DeploymentGuide.gs  # Deployment instructions
-├── 1_Init.gs             # Sheet initialization, Subject cache helpers, Reset Subjects
-├── 2_DataUpload.gs       # Bulk upload functions (Students with AcademicYear)
-├── 3_Auth.gs             # Authentication and RBAC
-├── 4_Exams.gs            # Exam management (LockService on createExam)
-├── 5_Marks.gs            # Marks entry (LockService + Duplicate protection + cached reads)
-├── 6_Analytics.gs        # Performance analytics
-├── 7_Reports.gs          # Report generation and exports
-└── Dashboard.html        # Complete UI
+├── 0_DeploymentGuide.gs
+├── 1_Init.gs             # Schema, Subject cache, Year-end (Archive/Reset/Switch), Performance warning
+├── 2_DataUpload.gs       # Bulk uploads, getStudentsPage (paginated), promoteStudents 6→12
+├── 3_Auth.gs             # RBAC, custom email login, getCurrentAcademicYear
+├── 4_Exams.gs            # Exam CRUD with LockService
+├── 5_Marks.gs            # Marks CRUD (LockService, duplicate protection, validation), getMarksPage, getAuditLog
+├── 6_Analytics.gs
+├── 7_Reports.gs
+└── Dashboard.html        # Full UI (pagination, audit log, year-end UI, perf warning)
 ```
 
-## Key Features
+## Database Schema
 
-### Implemented
-1. **Role-Based Access Control** - Admin & Teacher with server-side filtering
-2. **Student Management** - Individual + Bulk upload, Class/Section/Stream + Elective Subject + AcademicYear
-3. **Teacher Management** - Email-based login, Subject/Class/Section assignments
-4. **Exam Management** - Create exams with internals, Lock/Unlock, Academic year filtering
-5. **Marks Entry** - Individual + Bulk upload + Admin Bulk CSV import
-6. **Analytics** - Subject/Class/Teacher performance, Weak students, Toppers
-7. **Report Generation** - Student PDFs, Class-wise PDFs, Download Marksheet (Excel + CSV)
-8. **Admin Tools** - Archive, Promote, Reset Subjects to Default
+### Students (15 columns)
+StudentID, Name, Class, Section, Stream, RollNo, ParentEmail, Phone, JoinDate, Status, ElectiveSubject, AcademicYear, **LanguageL1**, **LanguageL2**, **LanguageL3**
 
-### Stabilization Mandate (Feb 2026) — Backend Done ✅
-- ✅ **Issue 1: Duplicate Protection on Marks** — `addMarks`, `bulkAddMarks`, `adminBulkUploadMarks` now use composite key `${studentId}|${examId}|${subject}` to UPDATE existing rows instead of inserting duplicates
-- ✅ **Issue 2: LockService on writes** — All write operations (`addMarks`, `bulkAddMarks`, `adminBulkUploadMarks`, `bulkUploadStudents`, `createExam`, `deleteMarks`, `resetSubjectsToDefault`) wrapped in `LockService.getScriptLock().waitLock(30000)` with `try/finally` release
-- ✅ **Issue 3: Optimized Sheet Reads** — Replaced `getDataRange()` inside loops with single ranged reads + in-memory Map lookups across `5_Marks.gs` and `2_DataUpload.gs`. `bulkAddMarks` now reads each sheet ONCE and uses cached maps; batch-writes new rows in one `setValues` call
-- ✅ **Issue 5: AcademicYear in Students sheet** — Added 12th column; `addStudent`, `updateStudent`, `bulkUploadStudents`, `syncStudentsFromClassSheets`, `getStudents` all populate/read it; default filter by current year
-- ✅ **Issue 6: Subject Config System** — Subjects now read from `Subjects` sheet via `_getSubjectsCache()` + `getValidSubjectsForStudent()` helpers in `1_Init.gs`. Admin menu has **"Reset Subjects to Default"** button (`resetSubjectsToDefault()`). System gracefully auto-populates defaults
-- ✅ **Issue 7: Fail-safe Validation on Marks** — `addMarks`, `bulkAddMarks`, `adminBulkUploadMarks` validate (a) student exists & active, (b) exam exists, (c) exam not locked, (d) subject is valid for student's class/stream/elective via `isSubjectValidForStudent()`
-- ✅ **Marks Edit Protection** — Locked exam blocks all writes (add/update/delete/bulk import) with explicit "Exam is locked. No edits allowed." error message
-- ✅ **Duplicate Safety UI** — `addMarks` returns `{ action: 'created' | 'updated' }` and friendly message "Marks already exist — updating existing record." for UI to display
+### Subjects (10 columns) — Config-Driven
+SubjectID, SubjectName, SubjectCode, Class, Stream (nullable for 6-10), MaxMarks, PassingMarks, IsActive, **LanguageGroup** (L1/L2/L3 or comma list), **IsOptional**
 
-### Pending — Pagination UI (Issue 4)
-- Add `limit/offset` to `getStudents()` and marks listing
-- Pagination controls in `Dashboard.html` (default 100 rows/page)
+### Marks_Master (18 columns)
+EntryID, StudentID, StudentName, Subject, SubjectCode, TeacherID, TeacherName, ExamID, ExamName, Class, Section, MaxMarks, MarksObtained, Percentage, Grade, UpdatedAt, UpdatedBy, AcademicYear
 
-## Database Schema (Sheet Headers)
-- **Students**: StudentID, Name, Class, Section, Stream, RollNo, ParentEmail, Phone, JoinDate, Status, ElectiveSubject, **AcademicYear** (NEW)
-- **Teachers**: TeacherID, Name, Subject, Classes, Sections, Email, Phone, JoinDate, Status, IsClassTeacher, ClassTeacherOf
-- **Subjects**: SubjectID, SubjectName, SubjectCode, Class, Stream, MaxMarks, PassingMarks, IsActive
-- **Exams**: ExamID, ExamName, ExamType, Class, MaxMarks, Weightage, StartDate, EndDate, Locked, CreatedBy, CreatedAt, AcademicYear, HasInternals, Internal1-4, TotalMaxMarks
-- **Marks_Master**: EntryID, StudentID, StudentName, Subject, SubjectCode, TeacherID, TeacherName, ExamID, ExamName, Class, Section, MaxMarks, MarksObtained, Percentage, Grade, UpdatedAt, UpdatedBy, AcademicYear
+### Teachers (11), Exams (18), Classes, Settings_*, Logs, Aggregates, Alerts
+
+## Class & Section Configuration
+- **Class 6-10**: 11 sections (A1-A11), no stream
+- **Class 11-12**: 12 sections (A1-A12), with stream (Science / Computer Science / Commerce)
+- **Subjects per class**: read from `Subjects` sheet (NOT hardcoded)
+
+## Languages
+- **6-8**: 3-language system → LanguageL1 + LanguageL2 + LanguageL3 (English fixed L1; L2/L3 chosen from Hindi, Sanskrit, Tamil)
+- **9-10**: 2-language system → LanguageL1 + LanguageL2
+- **11-12**: ElectiveSubject (Maths / Applied Maths / Hindi / History / Sanskrit)
+
+## ✅ Implemented (Feb 2026 Stabilization Mandate)
+
+### Concurrency, Integrity & Performance
+- **Duplicate Protection**: All marks operations use composite key `studentId|examId|subject` → UPDATE existing instead of insert
+- **LockService**: All write paths wrap with `LockService.getScriptLock().waitLock(30000)` + `try/finally` release. Files: addMarks, bulkAddMarks, adminBulkUploadMarks, deleteMarks, bulkUploadStudents, addStudent, updateStudent, createExam, syncStudentsFromClassSheets, archiveAcademicYear, resetForNewYear, promoteStudents, resetSubjectsToDefault
+- **Optimized Reads**: Eliminated `getDataRange()` inside loops. Bulk operations read each sheet ONCE → in-memory Map → single `setValues` batch write
+- **Server-side Pagination**: `getStudentsPage(filters, page, limit=100)`, `getMarksPage(...)`, `getAuditLog(...)` — default 100 rows
+- **Performance Safety**: Dashboard shows warning when `Marks_Master` ≥ 200,000 rows via `getMarksRowCount()`
+
+### Validation Layer (final, before any marks save)
+- Student exists & is Active
+- Exam exists & not locked (Marks Edit Protection — locked exams reject add/update/delete)
+- Subject is valid for student's class/stream/elective via config-driven `isSubjectValidForStudent()`
+- Marks ≥ 0 and ≤ MaxMarks
+- No null/missing required fields
+- All errors return clear, actionable messages
+
+### Subject Config (config-driven)
+- `_getSubjectsCache()` reads Subjects sheet once per execution
+- `getValidSubjectsForStudent(student)` derives valid subjects from config (mandatory + chosen languages + elective)
+- Admin "Reset Subjects to Default" button re-seeds defaults
+- Default seed covers Class 6-12 with proper language groups and stream-based subjects
+
+### Year-End System
+- `archiveAcademicYear(year)` — exports Students + Marks + Exams to a NEW spreadsheet (returns URL)
+- `resetForNewYear(newYear)` — clears Marks_Master + Exams + Aggregates, switches academic year, preserves Students
+- `switchAcademicYear(newYear)` — non-destructive year switch
+- Admin menu items + dedicated UI page (Year-End Operations) with 3 cards
+
+### Student Promotion (6 → 7 → 8 → 9 → 10 → 11 → 12)
+- `promoteStudents(fromYear, toYear, { resetRollNumbers })` — section preserved, optional roll-number reset, Class 12 → Alumni
+- All 6 → 12 supported
+
+### Audit View (Admin only)
+- Dashboard tab "Audit Log" reads Marks_Master with filters: class, subject, updatedBy, fromDate, toDate, search
+- Server-side paginated, sorted by UpdatedAt desc
+- Columns: Updated At, Student, Class/Section, Subject, Exam, Marks, %, Updated By, Teacher
+
+### UI Polish
+- Class dropdowns: 6, 7, 8, 9, 10, 11, 12 everywhere
+- Section dropdowns: dynamically populated by `getSectionsForClass()` (A1-A11 or A1-A12)
+- Add Student modal: Language L1/L2/L3 fields + optional stream/elective
+- Search box + debounced inputs on Students and Audit views
+- Performance warning banner on Dashboard when row threshold crossed
+
+### Architecture Constraints (User Requirements)
+- ✅ **Marks sheet remains UNIFIED** — no per-class/per-section duplication
+- ✅ **System is config-driven** — no hardcoded subjects, sections (except defaults at init)
+- ✅ **Single source of truth** for everything
 
 ## API Functions (Server-side, Key)
-- `addMarks(marksData)` → returns `{ success, action: 'created'|'updated', message }`
-- `bulkAddMarks(marksArray)` → returns `{ success, createdCount, updatedCount, failCount, errors }`
-- `adminBulkUploadMarks(data, columnMapping, options)` → preview/import with duplicate protection
-- `getStudents(filters)` → optimized single read; default filters by current academic year + Active
-- `resetSubjectsToDefault()` → admin-only, clears+reseeds Subjects sheet
+
+### Student / Subject
+- `getStudentsPage(filters, page, limit)` → `{ data, total, page, limit, totalPages }`
+- `getStudents(filters)` → array (legacy/unpaginated, used internally)
+- `addStudent`, `updateStudent`, `bulkUploadStudents` — all write 15 cols, LockService-guarded
+- `getSubjects(filters)` — returns 10-col data including languageGroup, isOptional
 - `getValidSubjectsForStudent(student)` / `isSubjectValidForStudent(subject, student)`
-- `downloadClassExamMarks(classNum, section, examId)` / `downloadClassExamMarksCSV(...)`
 
-## Backlog (P1)
-- **Pagination UI** for students/marks tables (next up)
-- Add Classes 6-8 and 9-10 (Sections A,B,C,D) — *user explicitly said wait until stabilization complete*
-- Year-End Archive & Reset (clear marks, keep structure, move to Archive Spreadsheet)
+### Marks
+- `addMarks(data)` → `{ success, action: 'created'|'updated', message }`
+- `bulkAddMarks(array)` → `{ createdCount, updatedCount, failCount, errors }`
+- `adminBulkUploadMarks(data, mapping, options)` — preview/import with full validation
+- `getMarksPage(filters, page, limit)` — paginated
+- `getAuditLog(filters, page, limit)` — admin-only audit history
 
-## Backlog (P2)
-- Auto-promote students (11 → 12)
-- Password security for teachers (currently email-only)
+### Year-End / Promotion
+- `archiveAcademicYear(year)` → `{ success, url, fileName, message }`
+- `resetForNewYear(newYear)` — clears Marks/Exams, preserves Students
+- `switchAcademicYear(newYear)` — settings only
+- `promoteStudents(fromYear, toYear, { resetRollNumbers })` — 6→12
+- `getMarksRowCount()` → `{ count, threshold, warning, message }`
 
-## Deployment Notes
-Refer to `0_DeploymentGuide.gs` for setting up as web app, managing user access, and configuring admin emails.
+### Admin Tools
+- `resetSubjectsToDefault()` — clears + reseeds Subjects
+- `initializeApp()` — creates all sheets
+
+## Test Credentials
+See `/app/memory/test_credentials.md`. Admin emails: `rishisans83@gmail.com`, `mvmseniors@gmail.com`, `anithasivanesan4604@gmail.com`. Teachers: any active email in Teachers sheet.
+
+## Backlog (Future)
+- Auto-promote scheduled trigger
+- Password security for teachers
+- Per-language separate Subjects view in admin
+- Class teacher dashboard with class-only view
+
+## Deployment
+Refer to `0_DeploymentGuide.gs`. Web app deploy: Execute as "Me", Access "Anyone with Google account". Share only the web app URL.

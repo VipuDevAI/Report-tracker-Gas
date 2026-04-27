@@ -680,13 +680,14 @@ function adminBulkUploadMarks(data, columnMapping, options) {
     // Cache: Students (one read)
     const studentsSheet = ss.getSheetByName("Students");
     const studentsLastRow = studentsSheet.getLastRow();
-    const studentsData = studentsLastRow > 1 ? studentsSheet.getRange(2, 1, studentsLastRow - 1, 12).getValues() : [];
+    const studentsData = studentsLastRow > 1 ? studentsSheet.getRange(2, 1, studentsLastRow - 1, 15).getValues() : [];
     const studentIndex = {};
     studentsData.forEach(row => {
       if (row[0]) {
         studentIndex[row[0]] = {
           name: row[1], class: row[2], section: row[3],
-          stream: row[4], electiveSubject: row[10] || ''
+          stream: row[4], electiveSubject: row[10] || '',
+          languageL1: row[12] || '', languageL2: row[13] || '', languageL3: row[14] || ''
         };
       }
     });
@@ -904,3 +905,120 @@ function suggestMapping(header) {
   if (h.includes("name")) return "studentName";
   return "";
 }
+
+
+/**
+ * Server-side paginated getMarks
+ * @param {Object} filters - Same filters as getMarks
+ * @param {number} page - 1-indexed page number (default 1)
+ * @param {number} limit - Rows per page (default 100)
+ * @returns {Object} { data, total, page, limit, totalPages }
+ */
+function getMarksPage(filters, page, limit) {
+  const all = getMarks(filters || {});
+  const total = all.length;
+  const lim = Math.max(1, parseInt(limit) || 100);
+  const totalPages = Math.max(1, Math.ceil(total / lim));
+  const pg = Math.min(Math.max(1, parseInt(page) || 1), totalPages);
+  const start = (pg - 1) * lim;
+  return {
+    data: all.slice(start, start + lim),
+    total: total,
+    page: pg,
+    limit: lim,
+    totalPages: totalPages
+  };
+}
+
+
+/**
+ * Audit log for admins: who edited which marks and when
+ * Reads Marks_Master and returns paginated audit entries.
+ * @param {Object} filters - { studentId, examId, subject, teacherId, updatedBy, fromDate, toDate, search }
+ * @param {number} page
+ * @param {number} limit
+ * @returns {Object} { data, total, page, limit, totalPages }
+ */
+function getAuditLog(filters, page, limit) {
+  if (!isAdmin()) {
+    return { data: [], total: 0, page: 1, limit: 100, totalPages: 0, error: "Access denied. Admin only." };
+  }
+  
+  const sheet = SpreadsheetApp.getActive().getSheetByName("Marks_Master");
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) {
+    return { data: [], total: 0, page: 1, limit: parseInt(limit) || 100, totalPages: 0 };
+  }
+  
+  const data = sheet.getRange(2, 1, lastRow - 1, 18).getValues();
+  
+  let entries = data.map(row => ({
+    entryId: row[0],
+    studentId: row[1],
+    studentName: row[2],
+    subject: row[3],
+    teacherId: row[5],
+    teacherName: row[6],
+    examId: row[7],
+    examName: row[8],
+    class: row[9],
+    section: row[10],
+    maxMarks: row[11],
+    marksObtained: row[12],
+    percentage: parseFloat(row[13]),
+    grade: row[14],
+    updatedAt: row[15],
+    updatedBy: row[16],
+    academicYear: row[17] || ""
+  })).filter(e => e.entryId);
+  
+  const f = filters || {};
+  if (f.studentId) entries = entries.filter(e => e.studentId === f.studentId);
+  if (f.examId) entries = entries.filter(e => e.examId === f.examId);
+  if (f.subject) entries = entries.filter(e => String(e.subject).toLowerCase() === String(f.subject).toLowerCase());
+  if (f.teacherId) entries = entries.filter(e => e.teacherId === f.teacherId);
+  if (f.updatedBy) entries = entries.filter(e => String(e.updatedBy || '').toLowerCase().indexOf(String(f.updatedBy).toLowerCase()) !== -1);
+  if (f.class) entries = entries.filter(e => String(e.class) === String(f.class));
+  if (f.section) entries = entries.filter(e => e.section === f.section);
+  if (f.academicYear) entries = entries.filter(e => e.academicYear === f.academicYear);
+  if (f.fromDate) {
+    const from = new Date(f.fromDate);
+    entries = entries.filter(e => e.updatedAt && new Date(e.updatedAt) >= from);
+  }
+  if (f.toDate) {
+    const to = new Date(f.toDate);
+    entries = entries.filter(e => e.updatedAt && new Date(e.updatedAt) <= to);
+  }
+  if (f.search) {
+    const q = String(f.search).toLowerCase();
+    entries = entries.filter(e =>
+      String(e.studentName || '').toLowerCase().includes(q) ||
+      String(e.subject || '').toLowerCase().includes(q) ||
+      String(e.examName || '').toLowerCase().includes(q) ||
+      String(e.updatedBy || '').toLowerCase().includes(q) ||
+      String(e.teacherName || '').toLowerCase().includes(q)
+    );
+  }
+  
+  // Sort by updatedAt descending (most recent first)
+  entries.sort((a, b) => {
+    const ta = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+    const tb = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+    return tb - ta;
+  });
+  
+  const total = entries.length;
+  const lim = Math.max(1, parseInt(limit) || 100);
+  const totalPages = Math.max(1, Math.ceil(total / lim));
+  const pg = Math.min(Math.max(1, parseInt(page) || 1), totalPages);
+  const start = (pg - 1) * lim;
+  
+  return {
+    data: entries.slice(start, start + lim),
+    total: total,
+    page: pg,
+    limit: lim,
+    totalPages: totalPages
+  };
+}
+

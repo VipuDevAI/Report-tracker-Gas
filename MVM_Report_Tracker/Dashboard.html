@@ -433,6 +433,37 @@
       box-shadow: var(--shadow-xl);
     }
     
+    /* Pagination + Audit + Warning */
+    .pagination-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 4px 4px;
+      flex-wrap: wrap;
+      gap: 12px;
+      border-top: 1px solid rgba(16, 185, 129, 0.1);
+      margin-top: 12px;
+    }
+    .pagination-info { color: #6b7280; font-size: 13px; }
+    .pagination-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .pagination-controls .btn-sm { padding: 6px 10px; font-size: 12px; }
+    .pagination-controls .btn-sm[disabled] { opacity: 0.4; cursor: not-allowed; }
+    .pagination-current { font-size: 13px; padding: 0 8px; color: #374151; font-weight: 600; }
+    
+    .perf-warning {
+      background: linear-gradient(135deg, #fef3c7, #fde68a);
+      color: #78350f;
+      padding: 12px 16px;
+      border-radius: 12px;
+      border: 1px solid #f59e0b;
+      margin-bottom: 16px;
+      font-size: 14px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .perf-warning-icon { font-weight: 700; font-size: 18px; }
+    
     .table-header {
       display: flex;
       justify-content: space-between;
@@ -1204,6 +1235,10 @@
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
         School Info
       </div>
+      <div class="nav-item admin-only" data-page="audit-log" onclick="showPage('audit-log')" data-testid="nav-audit-log">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+        Audit Log
+      </div>
     </nav>
     
     <!-- User Info & Logout -->
@@ -1233,6 +1268,8 @@
           <span id="userName">Loading...</span>
         </div>
       </div>
+      
+      <div id="perfWarningContainer"></div>
       
       <!-- KPI Cards -->
       <div class="kpi-grid" id="kpiGrid">
@@ -1270,6 +1307,9 @@
           <span class="filter-label">Class</span>
           <select class="filter-select" id="filterClass" onchange="updateSectionDropdown('filterSection', this.value); applyFilters()">
             <option value="">All Classes</option>
+            <option value="6">Class 6</option>
+            <option value="7">Class 7</option>
+            <option value="8">Class 8</option>
             <option value="9">Class 9</option>
             <option value="10">Class 10</option>
             <option value="11">Class 11</option>
@@ -1423,8 +1463,11 @@
       <div class="filters-bar">
         <div class="filter-group">
           <span class="filter-label">Class</span>
-          <select class="filter-select" id="studentFilterClass" onchange="updateSectionDropdown('studentFilterSection', this.value); loadStudents()">
+          <select class="filter-select" id="studentFilterClass" onchange="updateSectionDropdown('studentFilterSection', this.value); loadStudents(1)" data-testid="students-filter-class">
             <option value="">All</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
+            <option value="8">8</option>
             <option value="9">9</option>
             <option value="10">10</option>
             <option value="11">11</option>
@@ -1433,22 +1476,22 @@
         </div>
         <div class="filter-group">
           <span class="filter-label">Section</span>
-          <select class="filter-select" id="studentFilterSection" onchange="loadStudents()">
+          <select class="filter-select" id="studentFilterSection" onchange="loadStudents(1)" data-testid="students-filter-section">
             <option value="">All</option>
-            <option value="A">A</option>
-            <option value="B">B</option>
-            <option value="C">C</option>
-            <option value="D">D</option>
           </select>
         </div>
         <div class="filter-group">
           <span class="filter-label">Stream</span>
-          <select class="filter-select" id="studentFilterStream" onchange="loadStudents()">
+          <select class="filter-select" id="studentFilterStream" onchange="loadStudents(1)" data-testid="students-filter-stream">
             <option value="">All</option>
             <option value="Science">Science</option>
             <option value="Computer Science">Computer Science</option>
             <option value="Commerce">Commerce</option>
           </select>
+        </div>
+        <div class="filter-group" style="flex:1; min-width: 200px;">
+          <span class="filter-label">Search</span>
+          <input type="text" class="filter-select" id="studentFilterSearch" placeholder="Name / ID / Roll No" oninput="onStudentSearch()" data-testid="students-filter-search" />
         </div>
       </div>
       <div class="table-card">
@@ -1465,10 +1508,11 @@
               <th>Status</th>
             </tr>
           </thead>
-          <tbody id="studentsBody">
+          <tbody id="studentsBody" data-testid="students-tbody">
             <tr><td colspan="8" class="loading"><div class="spinner"></div></td></tr>
           </tbody>
         </table>
+        <div id="studentsPagination"></div>
       </div>
     </div>
     
@@ -1557,6 +1601,9 @@
             <label class="form-label">Class</label>
             <select class="form-input" id="examClass">
               <option value="All">All Classes</option>
+              <option value="6">Class 6</option>
+              <option value="7">Class 7</option>
+              <option value="8">Class 8</option>
               <option value="9">Class 9</option>
               <option value="10">Class 10</option>
               <option value="11">Class 11</option>
@@ -1631,8 +1678,11 @@
         </div>
         <div class="filter-group">
           <span class="filter-label">Class *</span>
-          <select class="filter-select" id="marksClass" onchange="updateSectionDropdown('marksSection', this.value); loadStudentsForMarks()">
+          <select class="filter-select" id="marksClass" onchange="updateSectionDropdown('marksSection', this.value); loadStudentsForMarks()" data-testid="marks-filter-class">
             <option value="">Select</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
+            <option value="8">8</option>
             <option value="9">9</option>
             <option value="10">10</option>
             <option value="11">11</option>
@@ -1641,12 +1691,8 @@
         </div>
         <div class="filter-group">
           <span class="filter-label">Section</span>
-          <select class="filter-select" id="marksSection" onchange="loadStudentsForMarks()">
+          <select class="filter-select" id="marksSection" onchange="loadStudentsForMarks()" data-testid="marks-filter-section">
             <option value="">All</option>
-            <option value="A">A</option>
-            <option value="B">B</option>
-            <option value="C">C</option>
-            <option value="D">D</option>
           </select>
         </div>
         <div class="filter-group">
@@ -2116,6 +2162,9 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
             <span class="filter-label">Class *</span>
             <select class="filter-select" id="reportClass" onchange="updateSectionDropdown('reportSection', this.value)">
               <option value="">Select Class</option>
+              <option value="6">Class 6</option>
+              <option value="7">Class 7</option>
+              <option value="8">Class 8</option>
               <option value="9">Class 9</option>
               <option value="10">Class 10</option>
               <option value="11">Class 11</option>
@@ -2126,10 +2175,6 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
             <span class="filter-label">Section</span>
             <select class="filter-select" id="reportSection">
               <option value="">All Sections</option>
-              <option value="A">A</option>
-              <option value="B">B</option>
-              <option value="C">C</option>
-              <option value="D">D</option>
             </select>
           </div>
           <div class="filter-group">
@@ -2188,21 +2233,108 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
     <!-- Archive Data Page -->
     <div id="page-archive-data" class="page-view admin-only">
       <div class="header">
-        <h1 class="page-title">Archive Year Data</h1>
+        <h1 class="page-title">Year-End Operations</h1>
       </div>
-      <div class="table-card" style="max-width: 500px;">
-        <div style="background: #dbeafe; padding: 16px; border-radius: 8px; margin-bottom: 20px;">
-          <strong style="color: #1d4ed8;">Info:</strong>
-          <p style="color: #1e40af; margin-top: 4px; font-size: 13px;">
-            This will create backup copies of Students, Marks, and Exams sheets with the academic year suffix.
-          </p>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 24px;">
+        
+        <div class="table-card" data-testid="card-archive-year">
+          <h3 style="margin-bottom: 12px; color: var(--primary);">1. Archive Academic Year</h3>
+          <div style="background: #dbeafe; padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size: 13px; color: #1e40af;">
+            Creates a NEW spreadsheet containing this year's Students, Marks, and Exams. Run this BEFORE resetting.
+          </div>
+          <div class="form-group">
+            <label class="form-label">Academic Year to Archive</label>
+            <input type="text" class="form-input" id="archiveYearInput" value="2024-2025" data-testid="input-archive-year">
+          </div>
+          <button class="btn btn-primary" onclick="doArchiveYear()" data-testid="btn-archive-year">Archive to New Spreadsheet</button>
+          <div id="archiveResults" style="margin-top: 16px;"></div>
         </div>
-        <div class="form-group">
-          <label class="form-label">Academic Year to Archive</label>
-          <input type="text" class="form-input" id="archiveYear" value="2024-2025">
+        
+        <div class="table-card" data-testid="card-reset-year">
+          <h3 style="margin-bottom: 12px; color: #b91c1c;">2. Reset for New Academic Year</h3>
+          <div style="background: #fee2e2; padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size: 13px; color: #991b1b;">
+            <strong>DESTRUCTIVE.</strong> Clears Marks_Master, Exams, Aggregates. Students preserved (use Promote next).
+          </div>
+          <div class="form-group">
+            <label class="form-label">New Academic Year</label>
+            <input type="text" class="form-input" id="newYearInput" placeholder="e.g., 2025-2026" data-testid="input-new-year">
+          </div>
+          <button class="btn btn-danger" onclick="doResetForNewYear()" data-testid="btn-reset-year">Clear Marks &amp; Exams</button>
+          <div id="resetYearResults" style="margin-top: 16px;"></div>
         </div>
-        <button class="btn btn-primary" onclick="archiveYearDataUI()">Archive Data</button>
-        <div id="archiveResults" style="margin-top: 20px;"></div>
+        
+        <div class="table-card" data-testid="card-switch-year">
+          <h3 style="margin-bottom: 12px; color: var(--primary);">3. Switch Active Academic Year</h3>
+          <div style="background: #ecfdf5; padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size: 13px; color: #065f46;">
+            Updates the active academic year setting. No data is modified.
+          </div>
+          <div class="form-group">
+            <label class="form-label">Switch To</label>
+            <input type="text" class="form-input" id="switchYearInput" placeholder="e.g., 2025-2026" data-testid="input-switch-year">
+          </div>
+          <button class="btn btn-secondary" onclick="doSwitchYear()" data-testid="btn-switch-year">Switch Year</button>
+          <div id="switchYearResults" style="margin-top: 16px;"></div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <!-- Audit Log Page (Admin Only) -->
+    <div id="page-audit-log" class="page-view admin-only">
+      <div class="header">
+        <h1 class="page-title">Audit Log — Marks Edit History</h1>
+      </div>
+      <div class="filters-bar">
+        <div class="filter-group">
+          <span class="filter-label">Class</span>
+          <select class="filter-select" id="auditFilterClass" onchange="loadAuditLog(1)" data-testid="audit-filter-class">
+            <option value="">All</option>
+            <option value="6">6</option><option value="7">7</option><option value="8">8</option>
+            <option value="9">9</option><option value="10">10</option>
+            <option value="11">11</option><option value="12">12</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <span class="filter-label">Subject</span>
+          <input type="text" class="filter-select" id="auditFilterSubject" placeholder="e.g., Mathematics" oninput="onAuditSearch()" data-testid="audit-filter-subject">
+        </div>
+        <div class="filter-group">
+          <span class="filter-label">Updated By</span>
+          <input type="text" class="filter-select" id="auditFilterUpdatedBy" placeholder="email" oninput="onAuditSearch()" data-testid="audit-filter-updatedby">
+        </div>
+        <div class="filter-group">
+          <span class="filter-label">From</span>
+          <input type="date" class="filter-select" id="auditFilterFrom" onchange="loadAuditLog(1)" data-testid="audit-filter-from">
+        </div>
+        <div class="filter-group">
+          <span class="filter-label">To</span>
+          <input type="date" class="filter-select" id="auditFilterTo" onchange="loadAuditLog(1)" data-testid="audit-filter-to">
+        </div>
+        <div class="filter-group" style="flex:1; min-width: 180px;">
+          <span class="filter-label">Search</span>
+          <input type="text" class="filter-select" id="auditFilterSearch" placeholder="Student / Exam / By" oninput="onAuditSearch()" data-testid="audit-filter-search">
+        </div>
+      </div>
+      <div class="table-card">
+        <table>
+          <thead>
+            <tr>
+              <th>Updated At</th>
+              <th>Student</th>
+              <th>Class/Sec</th>
+              <th>Subject</th>
+              <th>Exam</th>
+              <th>Marks</th>
+              <th>%</th>
+              <th>Updated By</th>
+              <th>Teacher</th>
+            </tr>
+          </thead>
+          <tbody id="auditBody" data-testid="audit-tbody">
+            <tr><td colspan="9" class="loading"><div class="spinner"></div></td></tr>
+          </tbody>
+        </table>
+        <div id="auditPagination"></div>
       </div>
     </div>
     
@@ -2353,6 +2485,9 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
             <span class="filter-label">Class *</span>
             <select class="filter-select" id="downloadClass" onchange="updateSectionDropdown('downloadSection', this.value)">
               <option value="">Select Class</option>
+              <option value="6">Class 6</option>
+              <option value="7">Class 7</option>
+              <option value="8">Class 8</option>
               <option value="9">Class 9</option>
               <option value="10">Class 10</option>
               <option value="11">Class 11</option>
@@ -2363,10 +2498,6 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
             <span class="filter-label">Section</span>
             <select class="filter-select" id="downloadSection">
               <option value="">All Sections</option>
-              <option value="A">A</option>
-              <option value="B">B</option>
-              <option value="C">C</option>
-              <option value="D">D</option>
             </select>
           </div>
         </div>
@@ -2444,6 +2575,9 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
         <div class="form-group">
           <label class="form-label">Class *</label>
           <select class="form-input" id="newStudentClass" required onchange="updateSectionDropdown('newStudentSection', this.value, false)">
+            <option value="6">6</option>
+            <option value="7">7</option>
+            <option value="8">8</option>
             <option value="9">9</option>
             <option value="10">10</option>
             <option value="11">11</option>
@@ -2453,15 +2587,13 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
         <div class="form-group">
           <label class="form-label">Section</label>
           <select class="form-input" id="newStudentSection">
-            <option value="A">A</option>
-            <option value="B">B</option>
-            <option value="C">C</option>
-            <option value="D">D</option>
+            <option value="A1">A1</option>
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Stream</label>
+          <label class="form-label">Stream <span style="color:#9ca3af; font-weight:normal;">(11-12 only)</span></label>
           <select class="form-input" id="newStudentStream">
+            <option value="">— None (6-10) —</option>
             <option value="Science">Science</option>
             <option value="Computer Science">Computer Science</option>
             <option value="Commerce">Commerce</option>
@@ -2472,9 +2604,21 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
           <input type="number" class="form-input" id="newStudentRoll">
         </div>
         <div class="form-group">
-          <label class="form-label">Elective Subject *</label>
-          <select class="form-input" id="newStudentElective" required>
-            <option value="">Select Elective</option>
+          <label class="form-label">Language L1</label>
+          <input type="text" class="form-input" id="newStudentLangL1" value="English" data-testid="add-student-l1">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Language L2 <span style="color:#9ca3af; font-weight:normal;">(9-10 / 6-8)</span></label>
+          <input type="text" class="form-input" id="newStudentLangL2" placeholder="Hindi / Sanskrit / Tamil" data-testid="add-student-l2">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Language L3 <span style="color:#9ca3af; font-weight:normal;">(6-8 only)</span></label>
+          <input type="text" class="form-input" id="newStudentLangL3" placeholder="Hindi / Sanskrit / Tamil" data-testid="add-student-l3">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Elective Subject <span style="color:#9ca3af; font-weight:normal;">(11-12 only)</span></label>
+          <select class="form-input" id="newStudentElective">
+            <option value="">— None —</option>
             <option value="Mathematics">Mathematics</option>
             <option value="Applied Mathematics">Applied Mathematics</option>
             <option value="Hindi">Hindi</option>
@@ -2482,10 +2626,10 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
             <option value="Sanskrit">Sanskrit</option>
           </select>
           <p style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">
-            Student chooses ONE: Maths/Applied Maths OR Hindi OR History OR Sanskrit
+            Class 11-12 only: Maths / Applied Maths / Hindi / History / Sanskrit
           </p>
         </div>
-        <button type="submit" class="btn btn-primary">Add Student</button>
+        <button type="submit" class="btn btn-primary" data-testid="btn-add-student">Add Student</button>
       </form>
     </div>
   </div>
@@ -2531,7 +2675,8 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
     let currentFilters = {};
     
     // Section configurations by class
-    const SECTIONS_9_10 = ["A", "B", "C", "D"];
+    const SECTIONS_6_10 = ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11"];
+    const SECTIONS_9_10 = SECTIONS_6_10; // alias for backward compat
     const SECTIONS_11_12 = ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11", "A12"];
     
     /**
@@ -2544,7 +2689,8 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
       if (cls === 11 || cls === 12) {
         return SECTIONS_11_12;
       }
-      return SECTIONS_9_10;
+      // 6, 7, 8, 9, 10 → A1-A11
+      return SECTIONS_6_10;
     }
     
     /**
@@ -2699,6 +2845,26 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
       initCharts();
       loadRecentResults();
       loadWeakStudents();
+      loadPerfWarning();
+    }
+    
+    function loadPerfWarning() {
+      const container = document.getElementById('perfWarningContainer');
+      if (!container) return;
+      google.script.run
+        .withSuccessHandler(function(info) {
+          if (info && info.warning) {
+            container.innerHTML = `
+              <div class="perf-warning" data-testid="perf-warning">
+                <span class="perf-warning-icon">!</span>
+                <span>${info.message}</span>
+              </div>`;
+          } else {
+            container.innerHTML = '';
+          }
+        })
+        .withFailureHandler(function() { container.innerHTML = ''; })
+        .getMarksRowCount();
     }
     
     function updateSidebarUserInfo() {
@@ -2755,6 +2921,7 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
         case 'archive-data': break;
         case 'manage-sheets': break;
         case 'download-marks': loadDownloadMarksPage(); break;
+        case 'audit-log': loadAuditLog(1); break;
       }
     }
     
@@ -3029,32 +3196,67 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
         .getAlerts();
     }
     
-    function loadStudents() {
+    let _studentsPage = 1;
+    const _studentsLimit = 100;
+    
+    function loadStudents(page) {
+      _studentsPage = parseInt(page) || _studentsPage || 1;
       const cls = document.getElementById('studentFilterClass')?.value || '';
       const section = document.getElementById('studentFilterSection')?.value || '';
       const stream = document.getElementById('studentFilterStream')?.value || '';
+      const search = document.getElementById('studentFilterSearch')?.value || '';
+      
+      const tbody = document.getElementById('studentsBody');
+      tbody.innerHTML = '<tr><td colspan="8" class="loading"><div class="spinner"></div></td></tr>';
       
       google.script.run
-        .withSuccessHandler(function(data) {
-          const tbody = document.getElementById('studentsBody');
+        .withSuccessHandler(function(resp) {
+          const data = (resp && resp.data) ? resp.data : [];
+          const total = (resp && resp.total) || 0;
+          const page = (resp && resp.page) || 1;
+          const totalPages = (resp && resp.totalPages) || 1;
+          
           if (data.length === 0) {
             tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No students found</td></tr>';
-            return;
+          } else {
+            tbody.innerHTML = data.map(s => `
+              <tr>
+                <td>${s.studentId}</td>
+                <td>${s.name}</td>
+                <td>${s.class}</td>
+                <td>${s.section}</td>
+                <td>${s.stream || '-'}</td>
+                <td>${s.rollNo}</td>
+                <td>${s.electiveSubject || '-'}</td>
+                <td><span class="badge ${s.status === 'Active' ? 'badge-success' : 'badge-danger'}">${s.status}</span></td>
+              </tr>
+            `).join('');
           }
-          tbody.innerHTML = data.map(s => `
-            <tr>
-              <td>${s.studentId}</td>
-              <td>${s.name}</td>
-              <td>${s.class}</td>
-              <td>${s.section}</td>
-              <td>${s.stream}</td>
-              <td>${s.rollNo}</td>
-              <td>${s.electiveSubject || '-'}</td>
-              <td><span class="badge ${s.status === 'Active' ? 'badge-success' : 'badge-danger'}">${s.status}</span></td>
-            </tr>
-          `).join('');
+          
+          renderStudentsPagination(page, totalPages, total);
         })
-        .getStudents({ class: cls, section: section, stream: stream });
+        .withFailureHandler(function(err) {
+          tbody.innerHTML = `<tr><td colspan="8" class="empty-state">Error: ${(err && err.message) || err}</td></tr>`;
+        })
+        .getStudentsPage({ class: cls, section: section, stream: stream, search: search }, _studentsPage, _studentsLimit);
+    }
+    
+    function renderStudentsPagination(page, totalPages, total) {
+      const container = document.getElementById('studentsPagination');
+      if (!container) return;
+      const start = total === 0 ? 0 : (page - 1) * _studentsLimit + 1;
+      const end = Math.min(page * _studentsLimit, total);
+      container.innerHTML = `
+        <div class="pagination-bar" data-testid="students-pagination">
+          <span class="pagination-info">${start}-${end} of ${total}</span>
+          <div class="pagination-controls">
+            <button class="btn btn-sm" ${page <= 1 ? 'disabled' : ''} onclick="loadStudents(1)" data-testid="students-page-first">« First</button>
+            <button class="btn btn-sm" ${page <= 1 ? 'disabled' : ''} onclick="loadStudents(${page - 1})" data-testid="students-page-prev">‹ Prev</button>
+            <span class="pagination-current">Page ${page} / ${totalPages}</span>
+            <button class="btn btn-sm" ${page >= totalPages ? 'disabled' : ''} onclick="loadStudents(${page + 1})" data-testid="students-page-next">Next ›</button>
+            <button class="btn btn-sm" ${page >= totalPages ? 'disabled' : ''} onclick="loadStudents(${totalPages})" data-testid="students-page-last">Last »</button>
+          </div>
+        </div>`;
     }
     
     function loadTeachers() {
@@ -3463,7 +3665,10 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
         section: document.getElementById('newStudentSection').value,
         stream: document.getElementById('newStudentStream').value,
         rollNo: document.getElementById('newStudentRoll').value,
-        electiveSubject: document.getElementById('newStudentElective').value
+        electiveSubject: document.getElementById('newStudentElective').value,
+        languageL1: document.getElementById('newStudentLangL1').value,
+        languageL2: document.getElementById('newStudentLangL2').value,
+        languageL3: document.getElementById('newStudentLangL3').value
       };
       
       google.script.run
@@ -3472,7 +3677,7 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
           if (result.success) {
             closeModal('addStudentModal');
             document.getElementById('addStudentForm').reset();
-            loadStudents();
+            loadStudents(1);
           }
         })
         .addStudent(student);
@@ -4185,33 +4390,158 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
         .promoteStudents(fromYear, toYear);
     }
     
-    function archiveYearDataUI() {
-      const year = document.getElementById('archiveYear').value;
+    // ================== YEAR-END OPERATIONS ==================
+    
+    function doArchiveYear() {
+      const year = document.getElementById('archiveYearInput').value.trim();
+      if (!year) { alert('Please enter the academic year to archive.'); return; }
+      if (!confirm(`Archive data for ${year} to a new spreadsheet?`)) return;
       
-      if (!year) {
-        alert('Please enter the academic year to archive');
-        return;
-      }
-      
-      if (!confirm(`Are you sure you want to archive data for ${year}?`)) {
-        return;
-      }
+      const container = document.getElementById('archiveResults');
+      container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
       
       google.script.run
         .withSuccessHandler(function(result) {
-          const container = document.getElementById('archiveResults');
           if (result.success) {
             container.innerHTML = `
               <div style="background: #dcfce7; padding: 16px; border-radius: 8px;">
                 <strong style="color: #15803d;">Archive Complete!</strong>
-                <p style="margin-top: 8px;">${result.message}</p>
-              </div>
-            `;
+                <p style="margin-top: 8px; font-size: 13px;">${result.message}</p>
+                <p style="margin-top: 8px;"><a href="${result.url}" target="_blank" style="color: var(--primary); text-decoration: underline;" data-testid="archive-link">Open Archive Spreadsheet</a></p>
+              </div>`;
           } else {
-            container.innerHTML = `<p style="color: var(--danger);">${result.message}</p>`;
+            container.innerHTML = `<div style="background: #fee2e2; padding: 16px; border-radius: 8px; color: #991b1b;">${result.message}</div>`;
           }
         })
-        .archiveYearData(year);
+        .withFailureHandler(function(err) {
+          container.innerHTML = `<div style="background: #fee2e2; padding: 12px; border-radius: 8px; color: #991b1b;">Error: ${(err && err.message) || err}</div>`;
+        })
+        .archiveAcademicYear(year);
+    }
+    
+    function doResetForNewYear() {
+      const newYear = document.getElementById('newYearInput').value.trim();
+      if (!newYear) { alert('Please enter the new academic year.'); return; }
+      if (!confirm(`This will CLEAR Marks_Master, Exams, and Aggregates and switch to ${newYear}. Did you archive first?`)) return;
+      if (!confirm(`Confirm again: PERMANENTLY clear current year's marks/exams?`)) return;
+      
+      const container = document.getElementById('resetYearResults');
+      container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          container.innerHTML = `<div style="background: ${result.success ? '#dcfce7' : '#fee2e2'}; padding: 12px; border-radius: 8px; color: ${result.success ? '#15803d' : '#991b1b'};">${result.message}</div>`;
+          if (result.success) initializeDashboard();
+        })
+        .withFailureHandler(function(err) {
+          container.innerHTML = `<div style="background: #fee2e2; padding: 12px; border-radius: 8px; color: #991b1b;">Error: ${(err && err.message) || err}</div>`;
+        })
+        .resetForNewYear(newYear);
+    }
+    
+    function doSwitchYear() {
+      const newYear = document.getElementById('switchYearInput').value.trim();
+      if (!newYear) { alert('Please enter the academic year.'); return; }
+      
+      const container = document.getElementById('switchYearResults');
+      container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          container.innerHTML = `<div style="background: ${result.success ? '#dcfce7' : '#fee2e2'}; padding: 12px; border-radius: 8px; color: ${result.success ? '#15803d' : '#991b1b'};">${result.message}</div>`;
+          if (result.success) initializeDashboard();
+        })
+        .withFailureHandler(function(err) {
+          container.innerHTML = `<div style="background: #fee2e2; padding: 12px; border-radius: 8px; color: #991b1b;">Error: ${(err && err.message) || err}</div>`;
+        })
+        .switchAcademicYear(newYear);
+    }
+    
+    // ================== AUDIT LOG ==================
+    
+    let _auditPage = 1;
+    const _auditLimit = 100;
+    let _auditSearchTimer = null;
+    
+    function onAuditSearch() {
+      if (_auditSearchTimer) clearTimeout(_auditSearchTimer);
+      _auditSearchTimer = setTimeout(() => loadAuditLog(1), 350);
+    }
+    
+    function onStudentSearch() {
+      if (window._studentSearchTimer) clearTimeout(window._studentSearchTimer);
+      window._studentSearchTimer = setTimeout(() => loadStudents(1), 350);
+    }
+    
+    function loadAuditLog(page) {
+      _auditPage = parseInt(page) || _auditPage || 1;
+      const filters = {
+        class: document.getElementById('auditFilterClass')?.value || '',
+        subject: document.getElementById('auditFilterSubject')?.value || '',
+        updatedBy: document.getElementById('auditFilterUpdatedBy')?.value || '',
+        fromDate: document.getElementById('auditFilterFrom')?.value || '',
+        toDate: document.getElementById('auditFilterTo')?.value || '',
+        search: document.getElementById('auditFilterSearch')?.value || ''
+      };
+      
+      const tbody = document.getElementById('auditBody');
+      tbody.innerHTML = '<tr><td colspan="9" class="loading"><div class="spinner"></div></td></tr>';
+      
+      google.script.run
+        .withSuccessHandler(function(resp) {
+          if (resp && resp.error) {
+            tbody.innerHTML = `<tr><td colspan="9" class="empty-state">${resp.error}</td></tr>`;
+            document.getElementById('auditPagination').innerHTML = '';
+            return;
+          }
+          const data = (resp && resp.data) ? resp.data : [];
+          const total = (resp && resp.total) || 0;
+          const page = (resp && resp.page) || 1;
+          const totalPages = (resp && resp.totalPages) || 1;
+          
+          if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="9" class="empty-state">No audit entries found</td></tr>';
+          } else {
+            tbody.innerHTML = data.map(e => {
+              const dt = e.updatedAt ? new Date(e.updatedAt).toLocaleString() : '-';
+              return `
+                <tr>
+                  <td style="font-size: 12px;">${dt}</td>
+                  <td>${e.studentName || ''}<br><span style="color:#9ca3af; font-size:11px;">${e.studentId || ''}</span></td>
+                  <td>${e.class}/${e.section}</td>
+                  <td>${e.subject || ''}</td>
+                  <td>${e.examName || ''}</td>
+                  <td><strong>${e.marksObtained}</strong>/${e.maxMarks}</td>
+                  <td>${isNaN(e.percentage) ? '-' : e.percentage.toFixed(1) + '%'}</td>
+                  <td style="font-size: 12px;">${e.updatedBy || '-'}</td>
+                  <td style="font-size: 12px;">${e.teacherName || '-'}</td>
+                </tr>`;
+            }).join('');
+          }
+          renderAuditPagination(page, totalPages, total);
+        })
+        .withFailureHandler(function(err) {
+          tbody.innerHTML = `<tr><td colspan="9" class="empty-state">Error: ${(err && err.message) || err}</td></tr>`;
+        })
+        .getAuditLog(filters, _auditPage, _auditLimit);
+    }
+    
+    function renderAuditPagination(page, totalPages, total) {
+      const container = document.getElementById('auditPagination');
+      if (!container) return;
+      const start = total === 0 ? 0 : (page - 1) * _auditLimit + 1;
+      const end = Math.min(page * _auditLimit, total);
+      container.innerHTML = `
+        <div class="pagination-bar" data-testid="audit-pagination">
+          <span class="pagination-info">${start}-${end} of ${total}</span>
+          <div class="pagination-controls">
+            <button class="btn btn-sm" ${page <= 1 ? 'disabled' : ''} onclick="loadAuditLog(1)">« First</button>
+            <button class="btn btn-sm" ${page <= 1 ? 'disabled' : ''} onclick="loadAuditLog(${page - 1})">‹ Prev</button>
+            <span class="pagination-current">Page ${page} / ${totalPages}</span>
+            <button class="btn btn-sm" ${page >= totalPages ? 'disabled' : ''} onclick="loadAuditLog(${page + 1})">Next ›</button>
+            <button class="btn btn-sm" ${page >= totalPages ? 'disabled' : ''} onclick="loadAuditLog(${totalPages})">Last »</button>
+          </div>
+        </div>`;
     }
     
     // ================== MANAGE SHEETS FUNCTIONS ==================
