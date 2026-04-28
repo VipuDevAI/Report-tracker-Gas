@@ -67,11 +67,13 @@ function initializeApp() {
       "StudentID", "Name", "Class", "Section", "Stream", 
       "RollNo", "ParentEmail", "Phone", "JoinDate", "Status",
       "ElectiveSubject", "AcademicYear",
-      "LanguageL1", "LanguageL2", "LanguageL3"
+      "LanguageL1", "LanguageL2", "LanguageL3",
+      "IsDeleted"
     ],
     Teachers: [
       "TeacherID", "Name", "Subject", "Classes", "Sections", 
-      "Email", "Phone", "JoinDate", "Status", "IsClassTeacher", "ClassTeacherOf"
+      "Email", "Phone", "JoinDate", "Status", "IsClassTeacher", "ClassTeacherOf",
+      "IsDeleted"
     ],
     Subjects: [
       "SubjectID", "SubjectName", "SubjectCode", "Class", "Stream", 
@@ -83,12 +85,22 @@ function initializeApp() {
     Exams: [
       "ExamID", "ExamName", "ExamType", "Class", "MaxMarks", 
       "Weightage", "StartDate", "EndDate", "Locked", "CreatedBy", "CreatedAt", "AcademicYear",
-      "HasInternals", "Internal1", "Internal2", "Internal3", "Internal4", "TotalMaxMarks"
+      "HasInternals", "Internal1", "Internal2", "Internal3", "Internal4", "TotalMaxMarks",
+      "IsDeleted"
     ],
     Marks_Master: [
       "EntryID", "StudentID", "StudentName", "Subject", "SubjectCode",
       "TeacherID", "TeacherName", "ExamID", "ExamName", "Class", "Section",
-      "MaxMarks", "MarksObtained", "Percentage", "Grade", "UpdatedAt", "UpdatedBy", "AcademicYear"
+      "MaxMarks", "MarksObtained", "Percentage", "Grade", "UpdatedAt", "UpdatedBy", "AcademicYear",
+      "Status", "IsDeleted"
+    ],
+    Auth: [
+      "Email", "PasswordHash", "Salt", "MustChangePassword",
+      "SessionToken", "SessionExpiry", "FailedAttempts", "LastLogin", "CreatedAt"
+    ],
+    Audit_Trail: [
+      "Timestamp", "Action", "EntityType", "EntityID", "Field",
+      "OldValue", "NewValue", "ChangedBy", "Context"
     ],
     Settings_Ranges: [
       "RangeName", "GradeLabel", "MinMarks", "MaxMarks", "Color"
@@ -180,7 +192,10 @@ function seedDefaultSchoolSettings() {
     ["LogoURL", "", new Date()],
     ["Address", "", new Date()],
     ["Phone", "", new Date()],
-    ["Email", "", new Date()]
+    ["Email", "", new Date()],
+    ["IsYearFinalized", "false", new Date()],
+    ["LastAggregatesUpdatedAt", "", new Date()],
+    ["SessionDurationHours", "8", new Date()]
   ];
 
   if (sheet.getLastRow() <= 1) {
@@ -1148,3 +1163,229 @@ function showSwitchYearPrompt() {
   const result = switchAcademicYear(newYear);
   ui.alert(result.message);
 }
+
+
+/* ========================================================================
+   AUDIT TRAIL, YEAR FREEZE, SETTINGS, AGGREGATES TIMESTAMP
+   ======================================================================== */
+
+/**
+ * Append entry to Audit_Trail sheet
+ * @param {string} action - e.g. "UPDATE_MARKS", "DELETE_STUDENT", "FREEZE_YEAR"
+ * @param {string} entityType - "Marks" | "Student" | "Exam" | "Auth" | "System"
+ * @param {string} entityId
+ * @param {string} field - field changed (or "*" for full row)
+ * @param {*} oldValue
+ * @param {*} newValue
+ * @param {Object} [context] - optional extra info (will be JSON-stringified)
+ */
+function writeAudit(action, entityType, entityId, field, oldValue, newValue, context) {
+  try {
+    const sheet = SpreadsheetApp.getActive().getSheetByName("Audit_Trail");
+    if (!sheet) return; // graceful: not yet initialized
+    const changedBy = (typeof getActualUserEmail === 'function' && getActualUserEmail()) || "System";
+    sheet.appendRow([
+      new Date(),
+      String(action || ""),
+      String(entityType || ""),
+      String(entityId || ""),
+      String(field || ""),
+      oldValue === undefined || oldValue === null ? "" : String(oldValue),
+      newValue === undefined || newValue === null ? "" : String(newValue),
+      changedBy,
+      context ? JSON.stringify(context) : ""
+    ]);
+  } catch (e) {
+    // never break a write because audit failed
+  }
+}
+
+
+/**
+ * Get a school setting value
+ * @param {string} key
+ * @returns {string} value or "" if not found
+ */
+function getSchoolSetting(key) {
+  const sheet = SpreadsheetApp.getActive().getSheetByName("Settings_School");
+  if (!sheet || sheet.getLastRow() <= 1) return "";
+  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues();
+  for (let i = 0; i < data.length; i++) {
+    if (data[i][0] === key) return String(data[i][1] !== undefined ? data[i][1] : "");
+  }
+  return "";
+}
+
+
+/**
+ * Set a school setting value
+ * @param {string} key
+ * @param {*} value
+ */
+function updateSchoolSetting(key, value) {
+  const sheet = SpreadsheetApp.getActive().getSheetByName("Settings_School");
+  if (!sheet) return;
+  const lastRow = sheet.getLastRow();
+  const data = lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, 3).getValues() : [];
+  for (let i = 0; i < data.length; i++) {
+    if (data[i][0] === key) {
+      sheet.getRange(i + 2, 2).setValue(value);
+      sheet.getRange(i + 2, 3).setValue(new Date());
+      return;
+    }
+  }
+  sheet.appendRow([key, value, new Date()]);
+}
+
+
+/**
+ * Admin-only wrapper for setting updates from UI
+ */
+function adminUpdateSchoolSetting(key, value) {
+  if (!isAdmin()) return { success: false, message: "Access denied." };
+  updateSchoolSetting(key, value);
+  logAction("Update Setting", `${key} = ${value}`);
+  writeAudit("UPDATE_SETTING", "Settings", key, key, "(prev)", String(value), {});
+  return { success: true, message: "Setting updated successfully!" };
+}
+
+
+/**
+ * Check if current academic year is finalized (frozen)
+ * @returns {boolean}
+ */
+function isYearFinalized() {
+  const v = String(getSchoolSetting("IsYearFinalized") || "").toLowerCase();
+  return v === "true" || v === "yes" || v === "1";
+}
+
+
+/**
+ * Guard: throw error if year is finalized (called by all write paths)
+ */
+function ensureYearNotFinalized(actionDesc) {
+  if (isYearFinalized()) {
+    throw new Error(`Academic year is FINALIZED. ${actionDesc || 'This change'} is not allowed. Admin must unfreeze first.`);
+  }
+}
+
+
+/**
+ * Finalize current academic year (admin only)
+ * @returns {Object}
+ */
+function finalizeAcademicYear() {
+  if (!isAdmin()) return { success: false, message: "Access denied. Admin only." };
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+    const wasFinalized = isYearFinalized();
+    updateSchoolSetting("IsYearFinalized", "true");
+    writeAudit("FREEZE_YEAR", "System", "AcademicYear", "IsYearFinalized", String(wasFinalized), "true", { year: getCurrentAcademicYear() });
+    logAction("Finalize Year", `Year ${getCurrentAcademicYear()} finalized by ${getActualUserEmail()}`);
+    return { success: true, message: `Academic year ${getCurrentAcademicYear()} is now FINALIZED. No edits allowed until unfrozen.` };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+
+/**
+ * Unfreeze a finalized year (super-admin only, requires literal confirmation text)
+ * @param {string} confirmText - must equal "UNFREEZE YEAR"
+ * @returns {Object}
+ */
+function unfreezeAcademicYear(confirmText) {
+  if (!isAdmin()) return { success: false, message: "Access denied. Admin only." };
+  // Super-admin = first email in ADMIN_EMAIL_LIST (script owner)
+  const me = (getActualUserEmail() || "").toLowerCase();
+  const superAdmin = (ADMIN_EMAIL_LIST[0] || "").toLowerCase();
+  if (me !== superAdmin) {
+    return { success: false, message: `Only the super-admin (${superAdmin}) can unfreeze a finalized year.` };
+  }
+  if (confirmText !== "UNFREEZE YEAR") {
+    return { success: false, message: 'Confirmation text mismatch. Type exactly: UNFREEZE YEAR' };
+  }
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+    updateSchoolSetting("IsYearFinalized", "false");
+    writeAudit("UNFREEZE_YEAR", "System", "AcademicYear", "IsYearFinalized", "true", "false", { year: getCurrentAcademicYear(), unfrozenBy: me });
+    logAction("Unfreeze Year", `Year ${getCurrentAcademicYear()} UNFROZEN by ${me}`);
+    return { success: true, message: `Academic year ${getCurrentAcademicYear()} is now editable.` };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+
+/**
+ * Get aggregates last-updated info for dashboard display
+ * @returns {Object} { lastUpdated, isStale, message }
+ */
+function getAggregatesStatus() {
+  const ts = getSchoolSetting("LastAggregatesUpdatedAt");
+  if (!ts) return { lastUpdated: "", isStale: true, message: "Aggregates have never been built. Run 'Rebuild Analytics'." };
+  const lastDate = new Date(ts);
+  const ageMs = Date.now() - lastDate.getTime();
+  const ageHours = ageMs / 3600000;
+  return {
+    lastUpdated: ts,
+    ageHours: ageHours,
+    isStale: ageHours > 24,
+    message: `Analytics last updated: ${lastDate.toLocaleString()} (${ageHours < 1 ? Math.round(ageHours * 60) + ' min' : Math.round(ageHours) + ' hr'} ago)`
+  };
+}
+
+
+/**
+ * Mark aggregates as just rebuilt (called from rebuildAggregates and after auto-triggers)
+ */
+function markAggregatesUpdated() {
+  updateSchoolSetting("LastAggregatesUpdatedAt", new Date().toISOString());
+}
+
+
+/* ========================================================================
+   PASSWORD HASHING + AUTH SHEET HELPERS
+   ======================================================================== */
+
+/**
+ * Hash a password with a salt using SHA-256
+ * @param {string} password
+ * @param {string} salt
+ * @returns {string} hex digest
+ */
+function hashPassword(password, salt) {
+  const text = String(salt || "") + String(password || "");
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, text, Utilities.Charset.UTF_8);
+  return digest.map(function (b) { return ((b < 0 ? b + 256 : b)).toString(16).padStart(2, '0'); }).join('');
+}
+
+
+/**
+ * Generate a cryptographically random salt (UUID-based)
+ */
+function generateSalt() {
+  return Utilities.getUuid().replace(/-/g, '');
+}
+
+
+/**
+ * Find a row in Auth sheet for given email
+ * @returns {Object|null} { rowNum, row } or null
+ */
+function _findAuthRow(email) {
+  if (!email) return null;
+  const sheet = SpreadsheetApp.getActive().getSheetByName("Auth");
+  if (!sheet || sheet.getLastRow() <= 1) return null;
+  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 9).getValues();
+  const target = String(email).trim().toLowerCase();
+  for (let i = 0; i < data.length; i++) {
+    if (String(data[i][0] || "").trim().toLowerCase() === target) {
+      return { rowNum: i + 2, row: data[i] };
+    }
+  }
+  return null;
+}
+

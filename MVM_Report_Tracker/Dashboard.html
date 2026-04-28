@@ -464,6 +464,24 @@
     }
     .perf-warning-icon { font-weight: 700; font-size: 18px; }
     
+    .aggregates-banner {
+      background: #f0fdfa;
+      color: #065f46;
+      padding: 10px 14px;
+      border-radius: 10px;
+      border: 1px solid #99f6e4;
+      margin-bottom: 16px;
+      font-size: 13px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    .aggregates-banner.aggregates-stale {
+      background: #fef3c7;
+      color: #78350f;
+      border-color: #f59e0b;
+    }
+    
     .table-header {
       display: flex;
       justify-content: space-between;
@@ -1064,17 +1082,61 @@
         <img src="https://customer-assets.emergentagent.com/job_exam-results-portal-1/artifacts/9808dr2m_emblem.jpg" alt="MVM Logo">
       </div>
       <h1 class="login-title">MVM Report Tracker</h1>
-      <p class="login-subtitle">Please login with your registered email</p>
+      <p class="login-subtitle" id="loginSubtitle">Please login with your registered email</p>
       
-      <form id="loginForm" onsubmit="handleLogin(event)">
+      <!-- Step 1: Email -->
+      <form id="loginEmailForm" onsubmit="handleLoginEmail(event)">
         <div class="login-input-group">
           <label for="loginEmail">Email Address</label>
-          <input type="email" id="loginEmail" class="login-input" placeholder="your.email@gmail.com" required>
+          <input type="email" id="loginEmail" class="login-input" placeholder="your.email@gmail.com" required data-testid="login-email">
         </div>
-        <button type="submit" class="login-btn" id="loginBtn">
-          <span id="loginBtnText">Login</span>
-          <span id="loginSpinner" class="login-spinner" style="display: none;"></span>
+        <button type="submit" class="login-btn" data-testid="login-btn-continue">
+          <span>Continue</span>
         </button>
+      </form>
+      
+      <!-- Step 2a: Password (existing user) -->
+      <form id="loginPasswordForm" onsubmit="handleLoginPassword(event)" style="display:none;">
+        <div class="login-input-group">
+          <label>Email</label>
+          <input type="email" id="loginPasswordEmailDisplay" class="login-input" disabled style="opacity:0.7;">
+        </div>
+        <div class="login-input-group">
+          <label for="loginPassword">Password</label>
+          <input type="password" id="loginPassword" class="login-input" placeholder="Enter password" required data-testid="login-password">
+        </div>
+        <button type="submit" class="login-btn" data-testid="login-btn-submit">
+          <span>Login</span>
+        </button>
+        <div style="margin-top: 12px; text-align: center;">
+          <a href="#" onclick="resetLoginFlow(); return false;" style="font-size: 13px; color: #6b7280;" data-testid="login-back">← Back</a>
+        </div>
+      </form>
+      
+      <!-- Step 2b: Set Password (first-time / forced reset) -->
+      <form id="loginSetPasswordForm" onsubmit="handleSetPassword(event)" style="display:none;">
+        <div class="login-input-group">
+          <label>Email</label>
+          <input type="email" id="setPasswordEmailDisplay" class="login-input" disabled style="opacity:0.7;">
+        </div>
+        <div class="login-input-group" id="oldPasswordGroup" style="display:none;">
+          <label for="oldPassword">Current Password</label>
+          <input type="password" id="oldPassword" class="login-input" placeholder="Enter current password" data-testid="set-old-password">
+        </div>
+        <div class="login-input-group">
+          <label for="newPassword">New Password (min 8 chars)</label>
+          <input type="password" id="newPassword" class="login-input" placeholder="Choose a strong password" minlength="8" required data-testid="set-new-password">
+        </div>
+        <div class="login-input-group">
+          <label for="confirmPassword">Confirm New Password</label>
+          <input type="password" id="confirmPassword" class="login-input" placeholder="Re-enter new password" minlength="8" required data-testid="set-confirm-password">
+        </div>
+        <button type="submit" class="login-btn" data-testid="set-password-btn">
+          <span>Set Password &amp; Login</span>
+        </button>
+        <div style="margin-top: 12px; text-align: center;">
+          <a href="#" onclick="resetLoginFlow(); return false;" style="font-size: 13px; color: #6b7280;">← Back</a>
+        </div>
       </form>
       
       <div id="loginError" class="login-error" style="display: none;"></div>
@@ -1239,6 +1301,14 @@
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
         Audit Log
       </div>
+      <div class="nav-item admin-only" data-page="trash" onclick="showPage('trash')" data-testid="nav-trash">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3"/></svg>
+        Trash
+      </div>
+      <div class="nav-item admin-only" data-page="system-admin" onclick="showPage('system-admin')" data-testid="nav-system-admin">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        System Admin
+      </div>
     </nav>
     
     <!-- User Info & Logout -->
@@ -1266,10 +1336,12 @@
         <div class="user-info">
           <div class="user-avatar" id="userAvatar">A</div>
           <span id="userName">Loading...</span>
+          <button class="btn btn-sm" onclick="logout()" style="margin-left: 12px;" data-testid="btn-logout">Logout</button>
         </div>
       </div>
       
       <div id="perfWarningContainer"></div>
+      <div id="aggregatesBanner"></div>
       
       <!-- KPI Cards -->
       <div class="kpi-grid" id="kpiGrid">
@@ -1709,11 +1781,12 @@
               <th>Roll No</th>
               <th>Student Name</th>
               <th>Marks</th>
+              <th>Status</th>
               <th>Action</th>
             </tr>
           </thead>
           <tbody id="marksEntryBody">
-            <tr><td colspan="4">Select exam, class, and subject to load students</td></tr>
+            <tr><td colspan="5">Select exam, class, and subject to load students</td></tr>
           </tbody>
         </table>
         <div style="margin-top: 16px;">
@@ -2338,6 +2411,72 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
       </div>
     </div>
     
+    <!-- Trash Page (Admin Only) -->
+    <div id="page-trash" class="page-view admin-only">
+      <div class="header">
+        <h1 class="page-title">Trash — Recently Deleted</h1>
+      </div>
+      <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+        <button class="btn btn-sm" onclick="showTrashTab('marks')" id="trashTabMarks" data-testid="trash-tab-marks">Marks</button>
+        <button class="btn btn-sm" onclick="showTrashTab('students')" id="trashTabStudents" data-testid="trash-tab-students">Students</button>
+        <button class="btn btn-sm" onclick="showTrashTab('exams')" id="trashTabExams" data-testid="trash-tab-exams">Exams</button>
+      </div>
+      <div class="table-card">
+        <table id="trashTable">
+          <thead id="trashHead"></thead>
+          <tbody id="trashBody" data-testid="trash-tbody">
+            <tr><td colspan="6" class="empty-state">Pick a category above</td></tr>
+          </tbody>
+        </table>
+        <div id="trashPagination"></div>
+      </div>
+    </div>
+    
+    <!-- System Admin Page (Admin Only): Year Freeze + Password Mgmt + Aggregates -->
+    <div id="page-system-admin" class="page-view admin-only">
+      <div class="header">
+        <h1 class="page-title">System Administration</h1>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 24px;">
+        
+        <div class="table-card" data-testid="card-year-freeze">
+          <h3 style="margin-bottom: 12px; color: var(--primary);">Academic Year Freeze</h3>
+          <div id="yearFreezeStatus" style="margin-bottom: 12px;"></div>
+          <p style="font-size: 13px; color: #6b7280; margin-bottom: 12px;">When frozen: marks edits, exam changes, and deletions are blocked across the system. Reports remain readable.</p>
+          <button class="btn btn-warning" onclick="doFreezeYear()" data-testid="btn-freeze-year">Finalize Current Year</button>
+          <div style="margin-top: 16px; border-top: 1px solid #f3f4f6; padding-top: 16px;">
+            <p style="font-size: 13px; color: #b91c1c; margin-bottom: 8px;"><strong>Super-admin only:</strong> unfreeze a finalized year.</p>
+            <input type="text" class="form-input" id="unfreezeConfirm" placeholder='Type: UNFREEZE YEAR' style="margin-bottom: 8px;" data-testid="input-unfreeze-confirm">
+            <button class="btn btn-danger" onclick="doUnfreezeYear()" data-testid="btn-unfreeze-year">Unfreeze Year</button>
+          </div>
+          <div id="yearFreezeResults" style="margin-top: 12px;"></div>
+        </div>
+        
+        <div class="table-card" data-testid="card-aggregates">
+          <h3 style="margin-bottom: 12px; color: var(--primary);">Analytics Aggregates</h3>
+          <div id="aggregatesStatusBox" style="margin-bottom: 12px; padding: 12px; background: #f3f4f6; border-radius: 8px; font-size: 13px;">Loading...</div>
+          <button class="btn btn-primary" onclick="doRebuildAggregates()" data-testid="btn-rebuild-aggregates">Rebuild Now</button>
+          <div id="aggregatesResults" style="margin-top: 12px;"></div>
+        </div>
+        
+        <div class="table-card" data-testid="card-password-mgmt">
+          <h3 style="margin-bottom: 12px; color: var(--primary);">Password Management</h3>
+          <p style="font-size: 13px; color: #6b7280; margin-bottom: 12px;">Reset a user's password — they'll be forced to set a new one on next login.</p>
+          <div class="form-group">
+            <input type="email" class="form-input" id="resetTargetEmail" placeholder="user@example.com" data-testid="input-reset-email">
+          </div>
+          <button class="btn btn-warning" onclick="doResetUserPassword()" data-testid="btn-reset-user-password">Reset User Password</button>
+          <div id="resetPasswordResults" style="margin-top: 12px;"></div>
+          <div style="margin-top: 16px; border-top: 1px solid #f3f4f6; padding-top: 16px;">
+            <h4 style="font-size: 14px; margin-bottom: 8px;">Registered Users</h4>
+            <div id="authUsersList" style="font-size: 12px; max-height: 240px; overflow-y: auto;"></div>
+            <button class="btn btn-sm" onclick="loadAuthUsers()" style="margin-top: 8px;" data-testid="btn-refresh-users">Refresh</button>
+          </div>
+        </div>
+        
+      </div>
+    </div>
+    
     <!-- Manage Data Sheets Page (Admin Only) -->
     <div id="page-manage-sheets" class="page-view admin-only">
       <div class="header">
@@ -2722,32 +2861,37 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
     
     function checkSavedLogin() {
       const savedEmail = localStorage.getItem('mvm_user_email');
-      const savedRole = localStorage.getItem('mvm_user_role');
+      const savedToken = localStorage.getItem('mvm_session_token');
+      const savedExpiry = localStorage.getItem('mvm_session_expiry');
       
-      if (savedEmail && savedRole) {
-        // Verify the saved login is still valid
-        google.script.run
-          .withSuccessHandler(function(access) {
-            if (access.registered) {
-              window.currentUserEmail = savedEmail;
-              window.currentUserRole = access.role;
-              localStorage.setItem('mvm_user_role', access.role);
-              hideLoginScreen();
-              initializeDashboard();
-            } else {
-              // Saved login no longer valid
-              localStorage.removeItem('mvm_user_email');
-              localStorage.removeItem('mvm_user_role');
-              showLoginScreen();
-            }
-          })
-          .withFailureHandler(function(error) {
-            showLoginScreen();
-          })
-          .verifyUserEmail(savedEmail);
-      } else {
-        showLoginScreen();
+      // Quick local expiry check
+      if (savedExpiry && new Date(savedExpiry).getTime() < Date.now()) {
+        _afterLogout();
+        return;
       }
+      
+      if (!savedEmail || !savedToken) {
+        showLoginScreen();
+        return;
+      }
+      
+      // Validate session server-side
+      google.script.run
+        .withSuccessHandler(function(session) {
+          if (session && session.email && session.role) {
+            window.currentUserEmail = session.email;
+            window.currentUserRole = session.role;
+            window.currentSessionToken = savedToken;
+            localStorage.setItem('mvm_user_role', session.role);
+            localStorage.setItem('mvm_session_expiry', session.sessionExpiry || '');
+            hideLoginScreen();
+            initializeDashboard();
+          } else {
+            _afterLogout();
+          }
+        })
+        .withFailureHandler(function() { _afterLogout(); })
+        .validateSession(savedToken);
     }
     
     function showLoginScreen() {
@@ -2764,60 +2908,158 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
     
     function handleLogin(event) {
       event.preventDefault();
-      
+      handleLoginEmail(event);
+    }
+    
+    function resetLoginFlow() {
+      document.getElementById('loginEmailForm').style.display = '';
+      document.getElementById('loginPasswordForm').style.display = 'none';
+      document.getElementById('loginSetPasswordForm').style.display = 'none';
+      document.getElementById('loginError').style.display = 'none';
+      document.getElementById('loginPassword').value = '';
+      document.getElementById('newPassword').value = '';
+      document.getElementById('confirmPassword').value = '';
+      document.getElementById('oldPassword').value = '';
+    }
+    
+    function handleLoginEmail(event) {
+      event.preventDefault();
       const email = document.getElementById('loginEmail').value.trim().toLowerCase();
-      const loginBtn = document.getElementById('loginBtn');
-      const loginBtnText = document.getElementById('loginBtnText');
-      const loginSpinner = document.getElementById('loginSpinner');
       const errorDiv = document.getElementById('loginError');
-      
-      // Show loading state
-      loginBtn.disabled = true;
-      loginBtnText.textContent = 'Verifying...';
-      loginSpinner.style.display = 'inline-block';
       errorDiv.style.display = 'none';
       
       google.script.run
         .withSuccessHandler(function(result) {
-          loginBtn.disabled = false;
-          loginBtnText.textContent = 'Login';
-          loginSpinner.style.display = 'none';
-          
-          if (result.registered) {
-            // Save login
-            localStorage.setItem('mvm_user_email', email);
-            localStorage.setItem('mvm_user_role', result.role);
-            window.currentUserEmail = email;
-            window.currentUserRole = result.role;
-            
-            hideLoginScreen();
-            initializeDashboard();
-          } else {
-            errorDiv.textContent = result.message || 'Email not registered. Please contact the administrator.';
+          if (!result.registered) {
+            errorDiv.textContent = result.message || 'Email not registered.';
             errorDiv.style.display = 'block';
+            return;
+          }
+          window._loginEmail = email;
+          window._loginRole = result.role;
+          if (result.requiresPasswordSetup) {
+            document.getElementById('loginEmailForm').style.display = 'none';
+            document.getElementById('loginSetPasswordForm').style.display = '';
+            document.getElementById('setPasswordEmailDisplay').value = email;
+            // No old password needed for first-time / forced-reset
+            document.getElementById('oldPasswordGroup').style.display = 'none';
+            document.getElementById('loginSubtitle').textContent = result.message;
+          } else {
+            document.getElementById('loginEmailForm').style.display = 'none';
+            document.getElementById('loginPasswordForm').style.display = '';
+            document.getElementById('loginPasswordEmailDisplay').value = email;
+            document.getElementById('loginSubtitle').textContent = 'Enter your password to continue';
+            setTimeout(() => document.getElementById('loginPassword').focus(), 100);
           }
         })
         .withFailureHandler(function(error) {
-          loginBtn.disabled = false;
-          loginBtnText.textContent = 'Login';
-          loginSpinner.style.display = 'none';
-          errorDiv.textContent = 'Error verifying email: ' + error;
+          errorDiv.textContent = 'Error: ' + ((error && error.message) || error);
           errorDiv.style.display = 'block';
         })
         .verifyUserEmail(email);
     }
     
+    function handleLoginPassword(event) {
+      event.preventDefault();
+      const email = window._loginEmail;
+      const password = document.getElementById('loginPassword').value;
+      const errorDiv = document.getElementById('loginError');
+      errorDiv.style.display = 'none';
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (!result.success) {
+            errorDiv.textContent = result.message || 'Login failed.';
+            errorDiv.style.display = 'block';
+            if (result.requiresPasswordSetup) {
+              document.getElementById('loginPasswordForm').style.display = 'none';
+              document.getElementById('loginSetPasswordForm').style.display = '';
+              document.getElementById('setPasswordEmailDisplay').value = email;
+              document.getElementById('oldPasswordGroup').style.display = 'none';
+            }
+            return;
+          }
+          _onLoginSuccess(email, result);
+        })
+        .withFailureHandler(function(error) {
+          errorDiv.textContent = 'Error: ' + ((error && error.message) || error);
+          errorDiv.style.display = 'block';
+        })
+        .loginWithPassword(email, password);
+    }
+    
+    function handleSetPassword(event) {
+      event.preventDefault();
+      const email = window._loginEmail || document.getElementById('setPasswordEmailDisplay').value;
+      const oldP = document.getElementById('oldPassword').value;
+      const newP = document.getElementById('newPassword').value;
+      const confirmP = document.getElementById('confirmPassword').value;
+      const errorDiv = document.getElementById('loginError');
+      errorDiv.style.display = 'none';
+      
+      if (newP.length < 8) {
+        errorDiv.textContent = 'Password must be at least 8 characters.';
+        errorDiv.style.display = 'block'; return;
+      }
+      if (newP !== confirmP) {
+        errorDiv.textContent = 'New password and confirmation do not match.';
+        errorDiv.style.display = 'block'; return;
+      }
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (!result.success) {
+            errorDiv.textContent = result.message || 'Could not set password.';
+            errorDiv.style.display = 'block'; return;
+          }
+          _onLoginSuccess(email, result);
+        })
+        .withFailureHandler(function(error) {
+          errorDiv.textContent = 'Error: ' + ((error && error.message) || error);
+          errorDiv.style.display = 'block';
+        })
+        .setUserPassword(email, newP, oldP);
+    }
+    
+    function _onLoginSuccess(email, result) {
+      localStorage.setItem('mvm_user_email', email);
+      localStorage.setItem('mvm_user_role', result.role);
+      if (result.sessionToken) {
+        localStorage.setItem('mvm_session_token', result.sessionToken);
+        localStorage.setItem('mvm_session_expiry', result.sessionExpiry || '');
+      }
+      window.currentUserEmail = email;
+      window.currentUserRole = result.role;
+      window.currentSessionToken = result.sessionToken || '';
+      hideLoginScreen();
+      initializeDashboard();
+    }
+    
     function logout() {
+      const token = localStorage.getItem('mvm_session_token') || '';
+      google.script.run
+        .withSuccessHandler(function() { _afterLogout(); })
+        .withFailureHandler(function() { _afterLogout(); })
+        .logoutUser(token);
+    }
+    
+    function _afterLogout() {
       localStorage.removeItem('mvm_user_email');
       localStorage.removeItem('mvm_user_role');
+      localStorage.removeItem('mvm_session_token');
+      localStorage.removeItem('mvm_session_expiry');
       window.currentUserEmail = null;
       window.currentUserRole = null;
-      showLoginScreen();
+      window.currentSessionToken = null;
+      window._loginEmail = null;
+      window._loginRole = null;
+      resetLoginFlow();
       document.getElementById('loginEmail').value = '';
+      document.getElementById('loginSubtitle').textContent = 'Please login with your registered email';
+      showLoginScreen();
     }
     
     function checkAccessAndInit() {
-      // Legacy function - now handled by login flow
       checkSavedLogin();
     }
     
@@ -2848,6 +3090,7 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
       loadRecentResults();
       loadWeakStudents();
       loadPerfWarning();
+      loadAggregatesBanner();
     }
     
     function loadPerfWarning() {
@@ -2924,6 +3167,8 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
         case 'manage-sheets': break;
         case 'download-marks': loadDownloadMarksPage(); break;
         case 'audit-log': loadAuditLog(1); break;
+        case 'trash': showTrashTab('marks'); break;
+        case 'system-admin': loadSystemAdmin(); break;
       }
     }
     
@@ -3331,8 +3576,15 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
             <tr>
               <td>${s.rollNo}</td>
               <td>${s.name}</td>
-              <td><input type="number" class="form-input marks-input" data-student-id="${s.studentId}" min="0" max="100" style="width: 80px;"></td>
-              <td><button class="btn btn-secondary" onclick="saveSingleMark('${s.studentId}')" style="padding: 4px 12px;">Save</button></td>
+              <td><input type="number" class="form-input marks-input" data-student-id="${s.studentId}" min="0" max="100" style="width: 80px;" data-testid="marks-input-${s.studentId}"></td>
+              <td>
+                <select class="form-input marks-status-input" data-student-id="${s.studentId}" style="width: 110px; padding: 4px;" data-testid="marks-status-${s.studentId}">
+                  <option value="PRESENT" selected>Present</option>
+                  <option value="ABSENT">Absent</option>
+                  <option value="EXEMPT">Exempt</option>
+                </select>
+              </td>
+              <td><button class="btn btn-secondary" onclick="saveSingleMark('${s.studentId}')" style="padding: 4px 12px;" data-testid="save-marks-${s.studentId}">Save</button></td>
             </tr>
           `).join('');
         })
@@ -3342,24 +3594,32 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
     function saveSingleMark(studentId) {
       const examId = document.getElementById('marksExam').value;
       const subject = document.getElementById('marksSubject').value;
-      const input = document.querySelector(`input[data-student-id="${studentId}"]`);
+      const input = document.querySelector(`input.marks-input[data-student-id="${studentId}"]`);
+      const statusEl = document.querySelector(`select.marks-status-input[data-student-id="${studentId}"]`);
       const marks = input.value;
+      const status = statusEl ? statusEl.value : 'PRESENT';
       
-      if (!examId || !subject || marks === '') {
-        alert('Please select exam, subject and enter marks');
+      if (!examId || !subject) {
+        alert('Please select exam and subject');
+        return;
+      }
+      if (status === 'PRESENT' && marks === '') {
+        alert('Please enter marks (or change status to Absent/Exempt).');
         return;
       }
       
       google.script.run
         .withSuccessHandler(function(result) {
           if (result.success) {
-            alert('Marks saved successfully!');
             input.style.backgroundColor = '#dcfce7';
+            // Friendly inline message
+            const msg = result.action === 'updated' ? 'Updated' : 'Saved';
+            input.title = msg;
           } else {
             alert('Error: ' + result.message);
           }
         })
-        .addMarks({ studentId: studentId, subject: subject, examId: examId, marks: parseInt(marks) });
+        .addMarks({ studentId: studentId, subject: subject, examId: examId, marks: parseFloat(marks || 0), status: status });
     }
     
     function saveAllMarks() {
@@ -3374,14 +3634,17 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
       
       const marksArray = [];
       inputs.forEach(input => {
-        if (input.value !== '') {
-          marksArray.push({
-            studentId: input.dataset.studentId,
-            subject: subject,
-            examId: examId,
-            marks: parseInt(input.value)
-          });
-        }
+        const sid = input.dataset.studentId;
+        const statusEl = document.querySelector(`select.marks-status-input[data-student-id="${sid}"]`);
+        const status = statusEl ? statusEl.value : 'PRESENT';
+        if (status === 'PRESENT' && input.value === '') return;
+        marksArray.push({
+          studentId: sid,
+          subject: subject,
+          examId: examId,
+          marks: parseFloat(input.value || 0),
+          status: status
+        });
       });
       
       if (marksArray.length === 0) {
@@ -4763,6 +5026,216 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
         })
         .downloadClassExamMarksCSV(classNum, section, examId);
     }
+
+    // ================== TRASH (SOFT DELETE) ==================
+    
+    let _trashCurrent = 'marks';
+    
+    function showTrashTab(type) {
+      _trashCurrent = type;
+      ['Marks', 'Students', 'Exams'].forEach(t => {
+        const el = document.getElementById('trashTab' + t);
+        if (el) el.classList.toggle('btn-primary', 'trash-tab-' + t.toLowerCase() === 'trash-tab-' + type.toLowerCase());
+      });
+      const head = document.getElementById('trashHead');
+      const body = document.getElementById('trashBody');
+      const pag = document.getElementById('trashPagination');
+      pag.innerHTML = '';
+      
+      if (type === 'marks') {
+        head.innerHTML = '<tr><th>Updated At</th><th>Student</th><th>Subject</th><th>Exam</th><th>Marks</th><th>Action</th></tr>';
+        body.innerHTML = '<tr><td colspan="6" class="loading"><div class="spinner"></div></td></tr>';
+        google.script.run
+          .withSuccessHandler(function(resp) {
+            const data = (resp && resp.data) || [];
+            if (resp && resp.error) { body.innerHTML = `<tr><td colspan="6" class="empty-state">${resp.error}</td></tr>`; return; }
+            if (data.length === 0) { body.innerHTML = '<tr><td colspan="6" class="empty-state">No deleted marks</td></tr>'; return; }
+            body.innerHTML = data.map(m => `
+              <tr>
+                <td>${m.updatedAt ? new Date(m.updatedAt).toLocaleString() : '-'}</td>
+                <td>${m.studentName} <span style="color:#9ca3af;font-size:11px;">${m.studentId}</span></td>
+                <td>${m.subject}</td>
+                <td>${m.examName}</td>
+                <td>${m.marksObtained}/${m.maxMarks} (${m.status || 'PRESENT'})</td>
+                <td><button class="btn btn-sm btn-primary" onclick="restoreItem('marks','${m.entryId}')" data-testid="restore-marks-${m.entryId}">Restore</button></td>
+              </tr>`).join('');
+          })
+          .withFailureHandler(function(err) { body.innerHTML = `<tr><td colspan="6" class="empty-state">Error: ${err}</td></tr>`; })
+          .getDeletedMarks(1, 100);
+      } else if (type === 'students') {
+        head.innerHTML = '<tr><th>ID</th><th>Name</th><th>Class</th><th>Section</th><th>Year</th><th>Action</th></tr>';
+        body.innerHTML = '<tr><td colspan="6" class="loading"><div class="spinner"></div></td></tr>';
+        google.script.run
+          .withSuccessHandler(function(data) {
+            data = data || [];
+            if (data.length === 0) { body.innerHTML = '<tr><td colspan="6" class="empty-state">No deleted students</td></tr>'; return; }
+            body.innerHTML = data.map(s => `
+              <tr>
+                <td>${s.studentId}</td>
+                <td>${s.name}</td>
+                <td>${s.class}</td>
+                <td>${s.section}</td>
+                <td>${s.academicYear}</td>
+                <td><button class="btn btn-sm btn-primary" onclick="restoreItem('student','${s.studentId}')" data-testid="restore-student-${s.studentId}">Restore</button></td>
+              </tr>`).join('');
+          })
+          .getDeletedStudents();
+      } else if (type === 'exams') {
+        head.innerHTML = '<tr><th>ID</th><th>Name</th><th>Type</th><th>Class</th><th>Year</th><th>Action</th></tr>';
+        body.innerHTML = '<tr><td colspan="6" class="loading"><div class="spinner"></div></td></tr>';
+        google.script.run
+          .withSuccessHandler(function(data) {
+            data = data || [];
+            if (data.length === 0) { body.innerHTML = '<tr><td colspan="6" class="empty-state">No deleted exams</td></tr>'; return; }
+            body.innerHTML = data.map(e => `
+              <tr>
+                <td>${e.examId}</td>
+                <td>${e.name}</td>
+                <td>${e.examType}</td>
+                <td>${e.class}</td>
+                <td>${e.academicYear}</td>
+                <td><button class="btn btn-sm btn-primary" onclick="restoreItem('exam','${e.examId}', true)" data-testid="restore-exam-${e.examId}">Restore (incl. marks)</button></td>
+              </tr>`).join('');
+          })
+          .getDeletedExams();
+      }
+    }
+    
+    function restoreItem(type, id, restoreMarks) {
+      if (!confirm('Restore this item?')) return;
+      const handler = function(result) {
+        alert((result && result.message) || 'Done.');
+        showTrashTab(_trashCurrent);
+      };
+      const fail = function(err) { alert('Error: ' + ((err && err.message) || err)); };
+      const runner = google.script.run.withSuccessHandler(handler).withFailureHandler(fail);
+      if (type === 'marks') runner.restoreMarks(id);
+      else if (type === 'student') runner.restoreStudent(id);
+      else if (type === 'exam') runner.restoreExam(id, !!restoreMarks);
+    }
+    
+    // ================== SYSTEM ADMIN PAGE ==================
+    
+    function loadSystemAdmin() {
+      loadYearFreezeStatus();
+      loadAggregatesStatusCard();
+      loadAuthUsers();
+    }
+    
+    function loadYearFreezeStatus() {
+      google.script.run
+        .withSuccessHandler(function(val) {
+          const isFrozen = String(val || "").toLowerCase() === "true";
+          const box = document.getElementById('yearFreezeStatus');
+          if (!box) return;
+          box.innerHTML = isFrozen
+            ? '<div style="padding: 12px; background: #fee2e2; color: #991b1b; border-radius: 8px;"><strong>FROZEN</strong> — current year is finalized. No edits allowed.</div>'
+            : '<div style="padding: 12px; background: #dcfce7; color: #15803d; border-radius: 8px;">Year is editable.</div>';
+        })
+        .getSchoolSetting('IsYearFinalized');
+    }
+    
+    function doFreezeYear() {
+      if (!confirm('Finalize the current academic year? All marks/exam edits will be blocked until unfrozen.')) return;
+      if (!confirm('Are you absolutely sure? This is logged in the audit trail.')) return;
+      google.script.run
+        .withSuccessHandler(function(r) {
+          document.getElementById('yearFreezeResults').innerHTML =
+            `<div style="padding:12px; border-radius:8px; background:${r.success?'#dcfce7':'#fee2e2'}; color:${r.success?'#15803d':'#991b1b'};">${r.message}</div>`;
+          if (r.success) loadYearFreezeStatus();
+        })
+        .finalizeAcademicYear();
+    }
+    
+    function doUnfreezeYear() {
+      const confirmText = document.getElementById('unfreezeConfirm').value;
+      if (confirmText !== 'UNFREEZE YEAR') { alert('Type exactly: UNFREEZE YEAR'); return; }
+      if (!confirm('Unfreeze the finalized year? This will re-enable all writes. Action will be audited.')) return;
+      google.script.run
+        .withSuccessHandler(function(r) {
+          document.getElementById('yearFreezeResults').innerHTML =
+            `<div style="padding:12px; border-radius:8px; background:${r.success?'#dcfce7':'#fee2e2'}; color:${r.success?'#15803d':'#991b1b'};">${r.message}</div>`;
+          if (r.success) { loadYearFreezeStatus(); document.getElementById('unfreezeConfirm').value = ''; }
+        })
+        .unfreezeAcademicYear(confirmText);
+    }
+    
+    function loadAggregatesStatusCard() {
+      const box = document.getElementById('aggregatesStatusBox');
+      if (!box) return;
+      google.script.run
+        .withSuccessHandler(function(s) {
+          if (!s) { box.innerHTML = 'Unable to load status'; return; }
+          box.innerHTML = `
+            <div>${s.message}</div>
+            ${s.isStale ? '<div style="margin-top:6px; color:#b45309;"><strong>Note:</strong> aggregates may be outdated.</div>' : ''}`;
+        })
+        .getAggregatesStatus();
+    }
+    
+    function doRebuildAggregates() {
+      const div = document.getElementById('aggregatesResults');
+      div.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+      google.script.run
+        .withSuccessHandler(function(r) {
+          div.innerHTML = `<div style="padding:10px; border-radius:8px; background:${r.success?'#dcfce7':'#fee2e2'}; color:${r.success?'#15803d':'#991b1b'};">${r.message || 'Done.'}</div>`;
+          loadAggregatesStatusCard();
+          loadAggregatesBanner();
+        })
+        .withFailureHandler(function(err) { div.innerHTML = `<div style="color:#991b1b;">Error: ${err}</div>`; })
+        .rebuildAggregates();
+    }
+    
+    function doResetUserPassword() {
+      const email = document.getElementById('resetTargetEmail').value.trim().toLowerCase();
+      if (!email) { alert('Enter target email'); return; }
+      if (!confirm(`Reset password for ${email}? They'll be forced to set a new one on next login.`)) return;
+      google.script.run
+        .withSuccessHandler(function(r) {
+          document.getElementById('resetPasswordResults').innerHTML =
+            `<div style="padding:10px; border-radius:8px; background:${r.success?'#dcfce7':'#fee2e2'}; color:${r.success?'#15803d':'#991b1b'};">${r.message}</div>`;
+          if (r.success) { document.getElementById('resetTargetEmail').value = ''; loadAuthUsers(); }
+        })
+        .adminResetUserPassword(email);
+    }
+    
+    function loadAuthUsers() {
+      const box = document.getElementById('authUsersList');
+      if (!box) return;
+      box.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+      google.script.run
+        .withSuccessHandler(function(users) {
+          users = users || [];
+          if (users.length === 0) { box.innerHTML = '<em style="color:#6b7280;">No users yet.</em>'; return; }
+          box.innerHTML = users.map(u => `
+            <div style="padding:6px 8px; border-bottom: 1px solid #f3f4f6; display:flex; justify-content:space-between; align-items:center;">
+              <span><strong>${u.email}</strong>
+                ${u.hasPassword ? '<span style="color:#15803d;">●</span>' : '<span style="color:#9ca3af;">○ no password</span>'}
+                ${u.mustChangePassword ? ' <span style="color:#b45309;">(reset pending)</span>' : ''}
+              </span>
+              <span style="font-size:11px; color:#9ca3af;">${u.lastLogin ? 'Last: ' + new Date(u.lastLogin).toLocaleDateString() : ''}</span>
+            </div>`).join('');
+        })
+        .listAuthUsers();
+    }
+    
+    // ================== AGGREGATES BANNER ON DASHBOARD ==================
+    
+    function loadAggregatesBanner() {
+      const container = document.getElementById('aggregatesBanner');
+      if (!container) return;
+      google.script.run
+        .withSuccessHandler(function(s) {
+          if (!s || !s.message) { container.innerHTML = ''; return; }
+          container.innerHTML = `
+            <div class="aggregates-banner ${s.isStale ? 'aggregates-stale' : ''}" data-testid="aggregates-banner">
+              <span style="flex:1;">${s.message}</span>
+              <button class="btn btn-sm" onclick="doRebuildAggregates(); showPage('system-admin');" data-testid="banner-rebuild">Rebuild</button>
+            </div>`;
+        })
+        .getAggregatesStatus();
+    }
+
   </script>
 </body>
 </html>

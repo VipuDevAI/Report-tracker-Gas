@@ -25,11 +25,14 @@ function bulkUploadStudents(data, options) {
   
   const lock = LockService.getScriptLock();
   try {
-    if (!previewOnly) lock.waitLock(30000);
+    if (!previewOnly) {
+      lock.waitLock(30000);
+      try { ensureYearNotFinalized("Bulk upload students"); } catch (e) { return { success: false, message: e.message }; }
+    }
     
     const sheet = SpreadsheetApp.getActive().getSheetByName("Students");
     const lastRow = sheet.getLastRow();
-    const lastCol = Math.max(sheet.getLastColumn(), 15);
+    const lastCol = Math.max(sheet.getLastColumn(), 16);
     const existingData = lastRow > 0
       ? sheet.getRange(1, 1, lastRow, lastCol).getValues()
       : [[]];
@@ -38,6 +41,7 @@ function bulkUploadStudents(data, options) {
     const existingIndex = {};
     const existingIdIndex = {};
     existingData.slice(1).forEach((row, idx) => {
+      if (row[15] === true) return; // skip deleted
       const key = `${row[2]}-${row[3]}-${row[5]}`;
       existingIndex[key] = { row: row, index: idx + 2 };
       if (row[0]) existingIdIndex[row[0]] = { row: row, index: idx + 2 };
@@ -115,7 +119,8 @@ function bulkUploadStudents(data, options) {
         academicYear,
         langL1,
         langL2,
-        langL3
+        langL3,
+        false  // IsDeleted
       ];
       
       if (existingByKey || existingById) {
@@ -160,11 +165,11 @@ function bulkUploadStudents(data, options) {
     
     if (toCreate.length > 0) {
       const writeRow = sheet.getLastRow() + 1;
-      sheet.getRange(writeRow, 1, toCreate.length, 15).setValues(toCreate);
+      sheet.getRange(writeRow, 1, toCreate.length, 16).setValues(toCreate);
     }
     
     toUpdate.forEach(item => {
-      sheet.getRange(item.rowIndex, 1, 1, 15).setValues([item.data]);
+      sheet.getRange(item.rowIndex, 1, 1, 16).setValues([item.data]);
     });
     
     logAction("Bulk Upload Students", `Created: ${results.created}, Updated: ${results.updated}, Failed: ${results.failed}`);
@@ -371,6 +376,7 @@ function addStudent(student) {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(30000);
+    try { ensureYearNotFinalized("Add student"); } catch (e) { return { success: false, message: e.message }; }
     
     const sheet = SpreadsheetApp.getActive().getSheetByName("Students");
     const studentId = `STU${Date.now()}`;
@@ -391,9 +397,11 @@ function addStudent(student) {
       academicYear,
       student.languageL1 || "English",
       student.languageL2 || "",
-      student.languageL3 || ""
+      student.languageL3 || "",
+      false  // IsDeleted
     ]);
     
+    try { writeAudit("CREATE_STUDENT", "Student", studentId, "*", "", student.name, { class: student.class, section: student.section }); } catch (e) {}
     logAction("Add Student", `Added student: ${student.name} (Class ${student.class})`);
     
     return { success: true, message: "Student added successfully!", studentId: studentId };
@@ -417,15 +425,16 @@ function updateStudent(studentId, updates) {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(30000);
+    try { ensureYearNotFinalized("Update student"); } catch (e) { return { success: false, message: e.message }; }
     
     const sheet = SpreadsheetApp.getActive().getSheetByName("Students");
     const lastRow = sheet.getLastRow();
     if (lastRow <= 1) return { success: false, message: "Student not found." };
-    const data = sheet.getRange(2, 1, lastRow - 1, 15).getValues();
+    const data = sheet.getRange(2, 1, lastRow - 1, 16).getValues();
     
     let foundIdx = -1;
     for (let i = 0; i < data.length; i++) {
-      if (data[i][0] === studentId) { foundIdx = i; break; }
+      if (data[i][0] === studentId && data[i][15] !== true) { foundIdx = i; break; }
     }
     
     if (foundIdx === -1) {
@@ -448,17 +457,89 @@ function updateStudent(studentId, updates) {
       updates.academicYear || row[11] || getCurrentAcademicYear(),
       updates.languageL1 !== undefined ? updates.languageL1 : (row[12] || ""),
       updates.languageL2 !== undefined ? updates.languageL2 : (row[13] || ""),
-      updates.languageL3 !== undefined ? updates.languageL3 : (row[14] || "")
+      updates.languageL3 !== undefined ? updates.languageL3 : (row[14] || ""),
+      false
     ];
     
-    sheet.getRange(foundIdx + 2, 1, 1, 15).setValues([updatedRow]);
+    sheet.getRange(foundIdx + 2, 1, 1, 16).setValues([updatedRow]);
     
+    try { writeAudit("UPDATE_STUDENT", "Student", studentId, "*", JSON.stringify({ name: row[1], class: row[2], section: row[3] }), JSON.stringify({ name: updatedRow[1], class: updatedRow[2], section: updatedRow[3] }), {}); } catch (e) {}
     logAction("Update Student", `Updated student: ${studentId}`);
     
     return { success: true, message: "Student updated successfully!" };
   } finally {
     try { lock.releaseLock(); } catch (e) {}
   }
+}
+
+
+/**
+ * Soft-delete a student (sets IsDeleted=true)
+ */
+function deleteStudent(studentId) {
+  if (!isAdmin()) return { success: false, message: "Access denied. Admin only." };
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+    try { ensureYearNotFinalized("Delete student"); } catch (e) { return { success: false, message: e.message }; }
+    const sheet = SpreadsheetApp.getActive().getSheetByName("Students");
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return { success: false, message: "Student not found." };
+    const data = sheet.getRange(2, 1, lastRow - 1, 16).getValues();
+    for (let i = 0; i < data.length; i++) {
+      if (data[i][0] === studentId && data[i][15] !== true) {
+        sheet.getRange(i + 2, 16).setValue(true);
+        try { writeAudit("DELETE_STUDENT", "Student", studentId, "IsDeleted", "false", "true", { name: data[i][1], class: data[i][2], section: data[i][3] }); } catch (e) {}
+        logAction("Delete Student", `Soft-deleted student: ${studentId}`);
+        return { success: true, message: "Student moved to trash." };
+      }
+    }
+    return { success: false, message: "Student not found or already deleted." };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+
+/**
+ * Restore a soft-deleted student
+ */
+function restoreStudent(studentId) {
+  if (!isAdmin()) return { success: false, message: "Access denied. Admin only." };
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+    const sheet = SpreadsheetApp.getActive().getSheetByName("Students");
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return { success: false, message: "Student not found." };
+    const data = sheet.getRange(2, 1, lastRow - 1, 16).getValues();
+    for (let i = 0; i < data.length; i++) {
+      if (data[i][0] === studentId && data[i][15] === true) {
+        sheet.getRange(i + 2, 16).setValue(false);
+        try { writeAudit("RESTORE_STUDENT", "Student", studentId, "IsDeleted", "true", "false", {}); } catch (e) {}
+        return { success: true, message: "Student restored." };
+      }
+    }
+    return { success: false, message: "Student not found in trash." };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+
+/**
+ * Get soft-deleted students for Trash UI
+ */
+function getDeletedStudents() {
+  if (!isAdmin()) return [];
+  const sheet = SpreadsheetApp.getActive().getSheetByName("Students");
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return [];
+  const data = sheet.getRange(2, 1, lastRow - 1, 16).getValues();
+  return data.filter(r => r[0] && r[15] === true).map(r => ({
+    studentId: r[0], name: r[1], class: r[2], section: r[3], stream: r[4],
+    rollNo: r[5], academicYear: r[11]
+  }));
 }
 
 
@@ -488,8 +569,9 @@ function getStudents(filters) {
   if (lastRow <= 1) return [];
   
   // Single bulk read (no getDataRange in loops)
-  const data = sheet.getRange(2, 1, lastRow - 1, 15).getValues();
+  const data = sheet.getRange(2, 1, lastRow - 1, 16).getValues();
   const currentYear = getCurrentAcademicYear();
+  const includeDeleted = filters && filters.includeDeleted === true;
   
   let students = data.map(row => ({
     studentId: row[0],
@@ -506,8 +588,9 @@ function getStudents(filters) {
     academicYear: row[11] || currentYear,
     languageL1: row[12] || '',
     languageL2: row[13] || '',
-    languageL3: row[14] || ''
-  })).filter(s => s.studentId);
+    languageL3: row[14] || '',
+    isDeleted: row[15] === true
+  })).filter(s => s.studentId && (includeDeleted || !s.isDeleted));
   
   // Apply filters
   if (filters) {

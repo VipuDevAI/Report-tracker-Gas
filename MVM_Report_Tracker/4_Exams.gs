@@ -32,6 +32,8 @@ function createExam(examData) {
   try {
     lock.waitLock(30000);
     
+    try { ensureYearNotFinalized("Create exam"); } catch (e) { return { success: false, message: e.message }; }
+    
     const sheet = SpreadsheetApp.getActive().getSheetByName("Exams");
     const examId = `EXM${Date.now()}`;
     const academicYear = getCurrentAcademicYear();
@@ -61,10 +63,12 @@ function createExam(examData) {
       internal2,
       internal3,
       internal4,
-      totalMaxMarks
+      totalMaxMarks,
+      false  // IsDeleted
     ]);
     
     const internalInfo = examData.hasInternals ? ` (Theory: ${examData.maxMarks}, Internals: ${internal1+internal2+internal3+internal4})` : '';
+    try { writeAudit("CREATE_EXAM", "Exam", examId, "*", "", examData.name, { class: examData.class, maxMarks: examData.maxMarks }); } catch (e) {}
     logAction("Create Exam", `Created exam: ${examData.name} (${examId}) for ${academicYear}${internalInfo}`);
     
     return { 
@@ -85,12 +89,15 @@ function createExam(examData) {
  */
 function getExams(filters) {
   const sheet = SpreadsheetApp.getActive().getSheetByName("Exams");
-  const data = sheet.getDataRange().getValues();
+  const lastRow = sheet.getLastRow();
   const currentYear = getCurrentAcademicYear();
   
-  if (data.length <= 1) return [];
+  if (lastRow <= 1) return [];
   
-  let exams = data.slice(1).map(row => ({
+  const data = sheet.getRange(2, 1, lastRow - 1, 19).getValues();
+  const includeDeleted = filters && filters.includeDeleted === true;
+  
+  let exams = data.map(row => ({
     examId: row[0],
     name: row[1],
     examType: row[2],
@@ -108,8 +115,9 @@ function getExams(filters) {
     internal2: row[14] || 0,
     internal3: row[15] || 0,
     internal4: row[16] || 0,
-    totalMaxMarks: row[17] || row[4]
-  }));
+    totalMaxMarks: row[17] || row[4],
+    isDeleted: row[18] === true
+  })).filter(e => e.examId && (includeDeleted || !e.isDeleted));
   
   if (filters) {
     if (filters.examType) {
@@ -143,28 +151,26 @@ function getExams(filters) {
  */
 function getExamById(examId) {
   const sheet = SpreadsheetApp.getActive().getSheetByName("Exams");
-  const data = sheet.getDataRange().getValues();
+  const lastRow = sheet.getLastRow();
   const currentYear = getCurrentAcademicYear();
+  if (lastRow <= 1) return null;
   
-  if (data.length <= 1) return null;
-  
-  const row = data.find(r => r[0] === examId);
-  if (!row) return null;
-  
-  return {
-    examId: row[0],
-    name: row[1],
-    examType: row[2],
-    class: row[3],
-    maxMarks: row[4],
-    weightage: row[5],
-    startDate: row[6],
-    endDate: row[7],
-    locked: row[8],
-    createdBy: row[9],
-    createdAt: row[10],
-    academicYear: row[11] || currentYear
-  };
+  const data = sheet.getRange(2, 1, lastRow - 1, 19).getValues();
+  for (let i = 0; i < data.length; i++) {
+    if (data[i][0] === examId && data[i][18] !== true) {
+      const row = data[i];
+      return {
+        examId: row[0], name: row[1], examType: row[2], class: row[3],
+        maxMarks: row[4], weightage: row[5], startDate: row[6], endDate: row[7],
+        locked: row[8], createdBy: row[9], createdAt: row[10],
+        academicYear: row[11] || currentYear,
+        hasInternals: row[12] || false, internal1: row[13] || 0,
+        internal2: row[14] || 0, internal3: row[15] || 0, internal4: row[16] || 0,
+        totalMaxMarks: row[17] || row[4]
+      };
+    }
+  }
+  return null;
 }
 
 
@@ -178,43 +184,54 @@ function updateExam(examId, updates) {
   if (!isAdmin()) {
     return { success: false, message: "Access denied. Admin privileges required." };
   }
-  
-  const sheet = SpreadsheetApp.getActive().getSheetByName("Exams");
-  const data = sheet.getDataRange().getValues();
-  
-  const rowIndex = data.findIndex(r => r[0] === examId);
-  
-  if (rowIndex === -1) {
-    return { success: false, message: "Exam not found." };
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+    try { ensureYearNotFinalized("Update exam"); } catch (e) { return { success: false, message: e.message }; }
+    
+    const sheet = SpreadsheetApp.getActive().getSheetByName("Exams");
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return { success: false, message: "Exam not found." };
+    const data = sheet.getRange(2, 1, lastRow - 1, 19).getValues();
+    
+    let foundIdx = -1;
+    for (let i = 0; i < data.length; i++) { if (data[i][0] === examId && data[i][18] !== true) { foundIdx = i; break; } }
+    if (foundIdx === -1) return { success: false, message: "Exam not found." };
+    
+    const row = data[foundIdx];
+    if (row[8] === true && !updates.forceUpdate) {
+      return { success: false, message: "Exam is locked. Cannot modify." };
+    }
+    
+    const i1 = updates.internal1 !== undefined ? updates.internal1 : row[13];
+    const i2 = updates.internal2 !== undefined ? updates.internal2 : row[14];
+    const i3 = updates.internal3 !== undefined ? updates.internal3 : row[15];
+    const i4 = updates.internal4 !== undefined ? updates.internal4 : row[16];
+    const max = updates.maxMarks || row[4];
+    
+    const updatedRow = [
+      examId,
+      updates.name || row[1],
+      updates.examType || row[2],
+      updates.class || row[3],
+      max,
+      updates.weightage || row[5],
+      updates.startDate || row[6],
+      updates.endDate || row[7],
+      row[8], row[9], row[10], row[11],
+      updates.hasInternals !== undefined ? updates.hasInternals : row[12],
+      i1, i2, i3, i4,
+      max + i1 + i2 + i3 + i4,
+      false
+    ];
+    
+    sheet.getRange(foundIdx + 2, 1, 1, 19).setValues([updatedRow]);
+    try { writeAudit("UPDATE_EXAM", "Exam", examId, "*", row[1], updatedRow[1], { changes: updates }); } catch (e) {}
+    logAction("Update Exam", `Updated exam: ${examId}`);
+    return { success: true, message: "Exam updated successfully!" };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
   }
-  
-  const row = data[rowIndex];
-  
-  // Check if exam is locked
-  if (row[8] === true && !updates.forceUpdate) {
-    return { success: false, message: "Exam is locked. Cannot modify." };
-  }
-  
-  const updatedRow = [
-    examId,
-    updates.name || row[1],
-    updates.examType || row[2],
-    updates.class || row[3],
-    updates.maxMarks || row[4],
-    updates.weightage || row[5],
-    updates.startDate || row[6],
-    updates.endDate || row[7],
-    row[8],  // Keep lock status
-    row[9],
-    row[10],
-    row[11]  // Keep academic year
-  ];
-  
-  sheet.getRange(rowIndex + 1, 1, 1, 12).setValues([updatedRow]);
-  
-  logAction("Update Exam", `Updated exam: ${examId}`);
-  
-  return { success: true, message: "Exam updated successfully!" };
 }
 
 
@@ -227,88 +244,163 @@ function lockExam(examId) {
   if (!isAdmin()) {
     return { success: false, message: "Access denied. Admin privileges required to lock exams." };
   }
-  
-  const sheet = SpreadsheetApp.getActive().getSheetByName("Exams");
-  const data = sheet.getDataRange().getValues();
-  
-  const rowIndex = data.findIndex(r => r[0] === examId);
-  
-  if (rowIndex === -1) {
-    return { success: false, message: "Exam not found." };
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+    try { ensureYearNotFinalized("Lock exam"); } catch (e) { return { success: false, message: e.message }; }
+    
+    const sheet = SpreadsheetApp.getActive().getSheetByName("Exams");
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return { success: false, message: "Exam not found." };
+    const data = sheet.getRange(2, 1, lastRow - 1, 19).getValues();
+    let foundIdx = -1;
+    for (let i = 0; i < data.length; i++) { if (data[i][0] === examId && data[i][18] !== true) { foundIdx = i; break; } }
+    if (foundIdx === -1) return { success: false, message: "Exam not found." };
+    
+    sheet.getRange(foundIdx + 2, 9).setValue(true);
+    try { writeAudit("LOCK_EXAM", "Exam", examId, "Locked", "false", "true", { examName: data[foundIdx][1] }); } catch (e) {}
+    logAction("Lock Exam", `Locked exam: ${examId}`);
+    
+    // Auto-trigger aggregates rebuild after lock
+    try { if (typeof rebuildAggregates === 'function') rebuildAggregates(); } catch (e) {}
+    
+    return { success: true, message: "Exam locked successfully!" };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
   }
-  
-  sheet.getRange(rowIndex + 1, 9).setValue(true);
-  
-  logAction("Lock Exam", `Locked exam: ${examId}`);
-  
-  return { success: true, message: "Exam locked successfully!" };
 }
 
 
 /**
  * Unlock an exam (Admin only)
- * @param {string} examId - Exam ID to unlock
- * @returns {Object} Result object
  */
 function unlockExam(examId) {
   if (!isAdmin()) {
     return { success: false, message: "Access denied. Admin privileges required to unlock exams." };
   }
-  
-  const sheet = SpreadsheetApp.getActive().getSheetByName("Exams");
-  const data = sheet.getDataRange().getValues();
-  
-  const rowIndex = data.findIndex(r => r[0] === examId);
-  
-  if (rowIndex === -1) {
-    return { success: false, message: "Exam not found." };
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+    try { ensureYearNotFinalized("Unlock exam"); } catch (e) { return { success: false, message: e.message }; }
+    
+    const sheet = SpreadsheetApp.getActive().getSheetByName("Exams");
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return { success: false, message: "Exam not found." };
+    const data = sheet.getRange(2, 1, lastRow - 1, 19).getValues();
+    let foundIdx = -1;
+    for (let i = 0; i < data.length; i++) { if (data[i][0] === examId && data[i][18] !== true) { foundIdx = i; break; } }
+    if (foundIdx === -1) return { success: false, message: "Exam not found." };
+    
+    sheet.getRange(foundIdx + 2, 9).setValue(false);
+    try { writeAudit("UNLOCK_EXAM", "Exam", examId, "Locked", "true", "false", { examName: data[foundIdx][1] }); } catch (e) {}
+    logAction("Unlock Exam", `Unlocked exam: ${examId}`);
+    return { success: true, message: "Exam unlocked successfully!" };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
   }
-  
-  sheet.getRange(rowIndex + 1, 9).setValue(false);
-  
-  logAction("Unlock Exam", `Unlocked exam: ${examId}`);
-  
-  return { success: true, message: "Exam unlocked successfully!" };
 }
 
 
 /**
- * Delete an exam and associated marks (Admin only)
- * @param {string} examId - Exam ID to delete
- * @returns {Object} Result object
+ * Soft-delete an exam (sets IsDeleted=true). Associated marks are also soft-deleted.
  */
 function deleteExam(examId) {
   if (!isAdmin()) {
     return { success: false, message: "Access denied. Admin privileges required to delete exams." };
   }
-  
-  const ss = SpreadsheetApp.getActive();
-  
-  // Delete exam
-  const examSheet = ss.getSheetByName("Exams");
-  const examData = examSheet.getDataRange().getValues();
-  const examRowIndex = examData.findIndex(r => r[0] === examId);
-  
-  if (examRowIndex === -1) {
-    return { success: false, message: "Exam not found." };
-  }
-  
-  examSheet.deleteRow(examRowIndex + 1);
-  
-  // Delete associated marks
-  const marksSheet = ss.getSheetByName("Marks_Master");
-  const marksData = marksSheet.getDataRange().getValues();
-  
-  // Delete from bottom to top to maintain row indices
-  for (let i = marksData.length - 1; i >= 1; i--) {
-    if (marksData[i][7] === examId) {
-      marksSheet.deleteRow(i + 1);
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+    try { ensureYearNotFinalized("Delete exam"); } catch (e) { return { success: false, message: e.message }; }
+    
+    const ss = SpreadsheetApp.getActive();
+    const examSheet = ss.getSheetByName("Exams");
+    const lastRow = examSheet.getLastRow();
+    if (lastRow <= 1) return { success: false, message: "Exam not found." };
+    const data = examSheet.getRange(2, 1, lastRow - 1, 19).getValues();
+    let foundIdx = -1;
+    for (let i = 0; i < data.length; i++) { if (data[i][0] === examId && data[i][18] !== true) { foundIdx = i; break; } }
+    if (foundIdx === -1) return { success: false, message: "Exam not found." };
+    
+    // Soft-delete exam
+    examSheet.getRange(foundIdx + 2, 19).setValue(true);
+    
+    // Soft-delete associated marks (batch update)
+    const marksSheet = ss.getSheetByName("Marks_Master");
+    const marksLastRow = marksSheet.getLastRow();
+    let marksDeleted = 0;
+    if (marksLastRow > 1) {
+      const marksData = marksSheet.getRange(2, 1, marksLastRow - 1, 20).getValues();
+      for (let i = 0; i < marksData.length; i++) {
+        if (marksData[i][7] === examId && marksData[i][19] !== true) {
+          marksSheet.getRange(i + 2, 20).setValue(true);
+          marksDeleted++;
+        }
+      }
     }
+    
+    try { writeAudit("DELETE_EXAM", "Exam", examId, "IsDeleted", "false", "true", { examName: data[foundIdx][1], cascadedMarks: marksDeleted }); } catch (e) {}
+    logAction("Delete Exam", `Soft-deleted exam: ${examId} (cascaded ${marksDeleted} marks)`);
+    return { success: true, message: `Exam moved to trash. ${marksDeleted} associated marks also moved to trash.` };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
   }
-  
-  logAction("Delete Exam", `Deleted exam: ${examId} and associated marks`);
-  
-  return { success: true, message: "Exam and associated marks deleted successfully!" };
+}
+
+
+/**
+ * Restore soft-deleted exam (and optionally cascaded marks)
+ */
+function restoreExam(examId, restoreMarks) {
+  if (!isAdmin()) return { success: false, message: "Access denied. Admin only." };
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+    const ss = SpreadsheetApp.getActive();
+    const examSheet = ss.getSheetByName("Exams");
+    const lastRow = examSheet.getLastRow();
+    if (lastRow <= 1) return { success: false, message: "Exam not found." };
+    const data = examSheet.getRange(2, 1, lastRow - 1, 19).getValues();
+    let foundIdx = -1;
+    for (let i = 0; i < data.length; i++) { if (data[i][0] === examId && data[i][18] === true) { foundIdx = i; break; } }
+    if (foundIdx === -1) return { success: false, message: "Exam not found in trash." };
+    examSheet.getRange(foundIdx + 2, 19).setValue(false);
+    
+    let marksRestored = 0;
+    if (restoreMarks === true) {
+      const marksSheet = ss.getSheetByName("Marks_Master");
+      const marksLastRow = marksSheet.getLastRow();
+      if (marksLastRow > 1) {
+        const md = marksSheet.getRange(2, 1, marksLastRow - 1, 20).getValues();
+        for (let i = 0; i < md.length; i++) {
+          if (md[i][7] === examId && md[i][19] === true) {
+            marksSheet.getRange(i + 2, 20).setValue(false);
+            marksRestored++;
+          }
+        }
+      }
+    }
+    
+    try { writeAudit("RESTORE_EXAM", "Exam", examId, "IsDeleted", "true", "false", { restoredMarks: marksRestored }); } catch (e) {}
+    return { success: true, message: `Exam restored.${marksRestored ? ' ' + marksRestored + ' marks restored.' : ''}` };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+
+/**
+ * Get soft-deleted exams (for Trash UI)
+ */
+function getDeletedExams() {
+  if (!isAdmin()) return [];
+  const sheet = SpreadsheetApp.getActive().getSheetByName("Exams");
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return [];
+  const data = sheet.getRange(2, 1, lastRow - 1, 19).getValues();
+  return data.filter(r => r[0] && r[18] === true).map(r => ({
+    examId: r[0], name: r[1], examType: r[2], class: r[3], maxMarks: r[4], academicYear: r[11]
+  }));
 }
 
 

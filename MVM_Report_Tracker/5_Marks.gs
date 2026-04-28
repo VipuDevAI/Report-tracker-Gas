@@ -18,56 +18,56 @@ function addMarks(marksData) {
     return { success: false, message: "Access denied. Teacher or Admin privileges required." };
   }
   
-  // Validate required fields
   if (!marksData.studentId || !marksData.subject || !marksData.examId) {
     return { success: false, message: "Student, Subject, and Exam are required." };
   }
   
-  if (marksData.marks === undefined || marksData.marks === null || marksData.marks === "") {
-    return { success: false, message: "Marks value is required." };
+  // Status: PRESENT (default) | ABSENT | EXEMPT
+  const status = String(marksData.status || "PRESENT").toUpperCase();
+  if (["PRESENT", "ABSENT", "EXEMPT"].indexOf(status) === -1) {
+    return { success: false, message: "Invalid status. Use PRESENT, ABSENT, or EXEMPT." };
+  }
+  if (status === "PRESENT" && (marksData.marks === undefined || marksData.marks === null || marksData.marks === "")) {
+    return { success: false, message: "Marks value is required for PRESENT status." };
   }
   
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(30000);
     
-    // Check if exam is locked (Marks Edit Protection)
+    try { ensureYearNotFinalized("Adding/updating marks"); } catch (e) { return { success: false, message: e.message }; }
+    
     const exam = getExamById(marksData.examId);
-    if (!exam) {
-      return { success: false, message: "Exam not found." };
-    }
-    if (exam.locked === true) {
-      return { success: false, message: "Exam is locked. No edits allowed." };
+    if (!exam) return { success: false, message: "Exam not found." };
+    if (exam.locked === true) return { success: false, message: "Exam is locked. No edits allowed." };
+    
+    let marksNum = 0;
+    if (status === "PRESENT") {
+      marksNum = parseFloat(marksData.marks);
+      if (isNaN(marksNum) || marksNum < 0 || marksNum > exam.maxMarks) {
+        return { success: false, message: `Marks must be between 0 and ${exam.maxMarks}.` };
+      }
     }
     
-    // Validate marks range
-    const marksNum = parseFloat(marksData.marks);
-    if (isNaN(marksNum) || marksNum < 0 || marksNum > exam.maxMarks) {
-      return { success: false, message: `Marks must be between 0 and ${exam.maxMarks}.` };
-    }
-    
-    // Get student details (this already applies teacher filter)
     const students = getStudents({ status: "Active" });
     const student = students.find(s => s.studentId === marksData.studentId);
-    
     if (!student) {
       return { success: false, message: "Student not found or you don't have access to this student." };
     }
     
-    // Fail-safe Validation: subject must be valid for this student
     if (!isSubjectValidForStudent(marksData.subject, student)) {
+      try {
+        writeAudit("MARKS_REJECT", "Marks", `${marksData.studentId}|${marksData.examId}|${marksData.subject}`, "subject", "", marksData.subject, { reason: "subject not valid for student", studentClass: student.class, studentStream: student.stream });
+      } catch (e) {}
       return { 
         success: false, 
         message: `Subject "${marksData.subject}" is not valid for ${student.name} (Class ${student.class} ${student.stream}${student.electiveSubject ? ', Elective: ' + student.electiveSubject : ''}).` 
       };
     }
     
-    // Teacher-specific permission validation
     if (!isAdmin()) {
       const assignment = getTeacherAssignment();
-      if (!assignment) {
-        return { success: false, message: "Teacher assignment not found." };
-      }
+      if (!assignment) return { success: false, message: "Teacher assignment not found." };
       if (assignment.subject !== "All" && assignment.subject !== marksData.subject) {
         return { success: false, message: `You can only enter marks for ${assignment.subject}.` };
       }
@@ -79,33 +79,34 @@ function addMarks(marksData) {
       }
     }
     
-    // Get teacher details
     const teacher = getTeacherByEmail(getActualUserEmail());
     const teacherId = teacher ? teacher.teacherId : "ADMIN";
     const teacherName = teacher ? teacher.name : "Administrator";
-    
     const academicYear = getCurrentAcademicYear();
     
-    // Single bulk read of Marks_Master (no getDataRange in loop)
     const sheet = SpreadsheetApp.getActive().getSheetByName("Marks_Master");
     const lastRow = sheet.getLastRow();
-    const data = lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, 18).getValues() : [];
+    const data = lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, 20).getValues() : [];
     
-    // Find existing entry by composite key (studentId|examId|subject)
     let existingRowNum = -1;
     let existingEntryId = null;
+    let existingMarks = null;
+    let existingStatus = "";
     for (let i = 0; i < data.length; i++) {
       if (data[i][1] === marksData.studentId &&
           data[i][7] === marksData.examId &&
-          String(data[i][3]).trim().toLowerCase() === String(marksData.subject).trim().toLowerCase()) {
-        existingRowNum = i + 2; // +2 because data starts at row 2
+          String(data[i][3]).trim().toLowerCase() === String(marksData.subject).trim().toLowerCase() &&
+          data[i][19] !== true) { // not deleted
+        existingRowNum = i + 2;
         existingEntryId = data[i][0];
+        existingMarks = data[i][12];
+        existingStatus = data[i][18] || "PRESENT";
         break;
       }
     }
     
-    const percentage = (marksNum / exam.maxMarks) * 100;
-    const grade = calculateGrade(percentage);
+    const percentage = status === "PRESENT" ? (marksNum / exam.maxMarks) * 100 : 0;
+    const grade = status === "PRESENT" ? calculateGrade(percentage) : "-";
     
     const entryData = [
       existingEntryId || `MRK${Date.now()}`,
@@ -120,35 +121,29 @@ function addMarks(marksData) {
       student.class,
       student.section,
       exam.maxMarks,
-      marksNum,
-      percentage.toFixed(2),
+      status === "PRESENT" ? marksNum : 0,
+      status === "PRESENT" ? percentage.toFixed(2) : 0,
       grade,
       new Date(),
       getActualUserEmail() || "System",
-      academicYear
+      academicYear,
+      status,
+      false  // IsDeleted
     ];
     
     if (existingRowNum > 0) {
-      sheet.getRange(existingRowNum, 1, 1, 18).setValues([entryData]);
+      sheet.getRange(existingRowNum, 1, 1, 20).setValues([entryData]);
+      try { writeAudit("UPDATE_MARKS", "Marks", existingEntryId, "marks", `${existingMarks}/${existingStatus}`, `${marksNum}/${status}`, { studentId: marksData.studentId, subject: marksData.subject, examId: marksData.examId }); } catch (e) {}
       logAction("Update Marks", `Updated marks for ${student.name} in ${marksData.subject}`);
-      return { 
-        success: true, 
-        action: "updated",
-        message: "Marks already exist — updating existing record." 
-      };
+      return { success: true, action: "updated", message: "Marks already exist — updating existing record." };
     } else {
       sheet.appendRow(entryData);
+      try { writeAudit("CREATE_MARKS", "Marks", entryData[0], "*", "", `${status}:${marksNum}`, { studentId: marksData.studentId, subject: marksData.subject, examId: marksData.examId }); } catch (e) {}
       logAction("Add Marks", `Added marks for ${student.name} in ${marksData.subject}`);
-      
-      if (percentage < 40) {
+      if (status === "PRESENT" && percentage < 40) {
         createWeakStudentAlert(student, marksData.subject, percentage, exam.name);
       }
-      
-      return { 
-        success: true, 
-        action: "created",
-        message: "Marks added successfully!" 
-      };
+      return { success: true, action: "created", message: "Marks added successfully!" };
     }
   } finally {
     try { lock.releaseLock(); } catch (e) {}
@@ -174,142 +169,103 @@ function bulkAddMarks(marksArray) {
   try {
     lock.waitLock(30000);
     
+    try { ensureYearNotFinalized("Bulk add marks"); } catch (e) { return { success: false, message: e.message }; }
+    
     const ss = SpreadsheetApp.getActive();
     const academicYear = getCurrentAcademicYear();
     
-    // Cache: Students (one read)
     const studentsList = getStudents({ status: "Active" });
     const studentsMap = {};
     studentsList.forEach(s => { studentsMap[s.studentId] = s; });
     
-    // Cache: Exams (one read)
     const examsSheet = ss.getSheetByName("Exams");
     const examsLastRow = examsSheet.getLastRow();
-    const examsData = examsLastRow > 1 ? examsSheet.getRange(2, 1, examsLastRow - 1, 18).getValues() : [];
+    const examsData = examsLastRow > 1 ? examsSheet.getRange(2, 1, examsLastRow - 1, 19).getValues() : [];
     const examsMap = {};
     examsData.forEach(row => {
-      if (row[0]) examsMap[row[0]] = { name: row[1], maxMarks: row[4], locked: row[8] === true };
+      if (row[0] && row[18] !== true) examsMap[row[0]] = { name: row[1], maxMarks: row[4], locked: row[8] === true };
     });
     
-    // Teacher info (one fetch)
     const teacher = getTeacherByEmail(getActualUserEmail());
     const teacherId = teacher ? teacher.teacherId : "ADMIN";
     const teacherName = teacher ? teacher.name : "Administrator";
-    
-    // Teacher assignment for permission filter
     const isUserAdmin = isAdmin();
     const assignment = isUserAdmin ? null : getTeacherAssignment();
     
-    // Cache: Marks_Master (one read) + build composite key map
     const marksSheet = ss.getSheetByName("Marks_Master");
     const marksLastRow = marksSheet.getLastRow();
-    const marksData = marksLastRow > 1 ? marksSheet.getRange(2, 1, marksLastRow - 1, 18).getValues() : [];
-    const marksMap = {}; // key -> { rowNum, entryId }
+    const marksData = marksLastRow > 1 ? marksSheet.getRange(2, 1, marksLastRow - 1, 20).getValues() : [];
+    const marksMap = {};
     marksData.forEach((row, idx) => {
+      if (row[19] === true) return; // skip deleted
       const key = `${row[1]}|${row[7]}|${String(row[3]).trim().toLowerCase()}`;
       marksMap[key] = { rowNum: idx + 2, entryId: row[0] };
     });
     
-    let createdCount = 0;
-    let updatedCount = 0;
-    let failCount = 0;
+    let createdCount = 0, updatedCount = 0, failCount = 0;
     const errors = [];
     const newRows = [];
-    const updateRows = []; // { rowNum, data }
-    
+    const updateRows = [];
     let idCounter = 0;
     const baseTime = Date.now();
     
     marksArray.forEach((m, idx) => {
-      // Required fields
-      if (!m.studentId || !m.subject || !m.examId || m.marks === undefined || m.marks === null || m.marks === "") {
-        failCount++;
-        errors.push({ row: idx + 1, error: "Missing required field (studentId, subject, examId, marks)" });
-        return;
+      const status = String(m.status || "PRESENT").toUpperCase();
+      if (["PRESENT", "ABSENT", "EXEMPT"].indexOf(status) === -1) {
+        failCount++; errors.push({ row: idx + 1, error: `Invalid status "${m.status}"` }); return;
+      }
+      if (!m.studentId || !m.subject || !m.examId) {
+        failCount++; errors.push({ row: idx + 1, error: "Missing required field" }); return;
+      }
+      if (status === "PRESENT" && (m.marks === undefined || m.marks === null || m.marks === "")) {
+        failCount++; errors.push({ row: idx + 1, error: "Marks required for PRESENT status" }); return;
       }
       
       const exam = examsMap[m.examId];
-      if (!exam) {
-        failCount++;
-        errors.push({ row: idx + 1, error: `Exam ${m.examId} not found` });
-        return;
-      }
-      if (exam.locked) {
-        failCount++;
-        errors.push({ row: idx + 1, error: `Exam "${exam.name}" is locked — no edits allowed` });
-        return;
-      }
+      if (!exam) { failCount++; errors.push({ row: idx + 1, error: `Exam ${m.examId} not found` }); return; }
+      if (exam.locked) { failCount++; errors.push({ row: idx + 1, error: `Exam "${exam.name}" is locked` }); return; }
       
       const student = studentsMap[m.studentId];
-      if (!student) {
-        failCount++;
-        errors.push({ row: idx + 1, error: `Student ${m.studentId} not found or not active` });
-        return;
-      }
+      if (!student) { failCount++; errors.push({ row: idx + 1, error: `Student ${m.studentId} not found` }); return; }
       
-      // Subject validity check
       if (!isSubjectValidForStudent(m.subject, student)) {
-        failCount++;
-        errors.push({ row: idx + 1, error: `Subject "${m.subject}" not valid for ${student.name} (Class ${student.class} ${student.stream})` });
-        return;
+        try { writeAudit("MARKS_REJECT_BULK", "Marks", `${m.studentId}|${m.examId}|${m.subject}`, "subject", "", m.subject, { reason: "subject not valid" }); } catch (e) {}
+        failCount++; errors.push({ row: idx + 1, error: `Subject "${m.subject}" not valid for ${student.name}` }); return;
       }
       
-      // Teacher permission check
       if (!isUserAdmin) {
-        if (!assignment) {
-          failCount++;
-          errors.push({ row: idx + 1, error: "Teacher assignment not found" });
-          return;
-        }
+        if (!assignment) { failCount++; errors.push({ row: idx + 1, error: "Teacher assignment not found" }); return; }
         if (assignment.subject !== "All" && assignment.subject !== m.subject) {
-          failCount++;
-          errors.push({ row: idx + 1, error: `You can only enter marks for ${assignment.subject}` });
-          return;
+          failCount++; errors.push({ row: idx + 1, error: `You can only enter ${assignment.subject}` }); return;
         }
         if (!assignment.hasAllClasses && !assignment.classes.includes(String(student.class))) {
-          failCount++;
-          errors.push({ row: idx + 1, error: "No permission for this class" });
-          return;
+          failCount++; errors.push({ row: idx + 1, error: "No permission for this class" }); return;
         }
         if (!assignment.hasAllSections && !assignment.sections.includes(student.section)) {
-          failCount++;
-          errors.push({ row: idx + 1, error: "No permission for this section" });
-          return;
+          failCount++; errors.push({ row: idx + 1, error: "No permission for this section" }); return;
         }
       }
       
-      const marksNum = parseFloat(m.marks);
-      if (isNaN(marksNum) || marksNum < 0 || marksNum > exam.maxMarks) {
-        failCount++;
-        errors.push({ row: idx + 1, error: `Marks must be 0-${exam.maxMarks}` });
-        return;
+      let marksNum = 0;
+      if (status === "PRESENT") {
+        marksNum = parseFloat(m.marks);
+        if (isNaN(marksNum) || marksNum < 0 || marksNum > exam.maxMarks) {
+          failCount++; errors.push({ row: idx + 1, error: `Marks must be 0-${exam.maxMarks}` }); return;
+        }
       }
       
-      const percentage = (marksNum / exam.maxMarks) * 100;
-      const grade = calculateGrade(percentage);
+      const percentage = status === "PRESENT" ? (marksNum / exam.maxMarks) * 100 : 0;
+      const grade = status === "PRESENT" ? calculateGrade(percentage) : "-";
       const key = `${m.studentId}|${m.examId}|${String(m.subject).trim().toLowerCase()}`;
       const existing = marksMap[key];
-      
       const entryId = existing ? existing.entryId : `MRK${baseTime}${(idCounter++).toString(36)}`;
+      
       const row = [
-        entryId,
-        m.studentId,
-        student.name,
-        m.subject,
-        m.subjectCode || "",
-        teacherId,
-        teacherName,
-        m.examId,
-        exam.name,
-        student.class,
-        student.section,
-        exam.maxMarks,
-        marksNum,
-        percentage.toFixed(2),
-        grade,
-        new Date(),
-        getActualUserEmail() || "System",
-        academicYear
+        entryId, m.studentId, student.name, m.subject, m.subjectCode || "",
+        teacherId, teacherName, m.examId, exam.name, student.class, student.section,
+        exam.maxMarks, status === "PRESENT" ? marksNum : 0,
+        status === "PRESENT" ? percentage.toFixed(2) : 0, grade,
+        new Date(), getActualUserEmail() || "System", academicYear, status, false
       ];
       
       if (existing) {
@@ -317,32 +273,30 @@ function bulkAddMarks(marksArray) {
         updatedCount++;
       } else {
         newRows.push(row);
-        // Track newly added so subsequent rows in this batch with same key UPDATE instead of duplicate
-        marksMap[key] = { rowNum: -1, entryId: entryId, pendingNewIndex: newRows.length - 1 };
+        marksMap[key] = { rowNum: -1, entryId: entryId };
         createdCount++;
       }
     });
     
-    // Batch write new rows
     if (newRows.length > 0) {
       const writeStart = marksSheet.getLastRow() + 1;
-      marksSheet.getRange(writeStart, 1, newRows.length, 18).setValues(newRows);
+      marksSheet.getRange(writeStart, 1, newRows.length, 20).setValues(newRows);
     }
+    updateRows.forEach(u => marksSheet.getRange(u.rowNum, 1, 1, 20).setValues([u.data]));
     
-    // Apply updates row-by-row (cannot batch non-contiguous rows reliably)
-    updateRows.forEach(u => {
-      marksSheet.getRange(u.rowNum, 1, 1, 18).setValues([u.data]);
-    });
-    
+    try { writeAudit("BULK_ADD_MARKS", "Marks", "BULK", "*", "", `${createdCount}/${updatedCount}`, { created: createdCount, updated: updatedCount, failed: failCount }); } catch (e) {}
     logAction("Bulk Add Marks", `Created: ${createdCount}, Updated: ${updatedCount}, Failed: ${failCount}`);
+    
+    // Auto-trigger aggregates rebuild after successful bulk
+    if (createdCount + updatedCount > 0) {
+      try { if (typeof rebuildAggregates === 'function') rebuildAggregates(); } catch (e) {}
+    }
     
     return {
       success: failCount === 0,
-      createdCount: createdCount,
-      updatedCount: updatedCount,
+      createdCount, updatedCount,
       successCount: createdCount + updatedCount,
-      failCount: failCount,
-      errors: errors,
+      failCount, errors,
       message: `${createdCount} created, ${updatedCount} updated, ${failCount} failed.`
     };
   } finally {
@@ -364,10 +318,11 @@ function getMarks(filters) {
   if (lastRow <= 1) return [];
   
   // Single bulk read (no getDataRange in loops)
-  const data = sheet.getRange(2, 1, lastRow - 1, 18).getValues();
+  const data = sheet.getRange(2, 1, lastRow - 1, 20).getValues();
   
   // Get current academic year for default filtering
   const currentYear = getCurrentAcademicYear();
+  const includeDeleted = filters && filters.includeDeleted === true;
   
   let marks = data.map(row => ({
     entryId: row[0],
@@ -387,8 +342,10 @@ function getMarks(filters) {
     grade: row[14],
     updatedAt: row[15],
     updatedBy: row[16],
-    academicYear: row[17] || currentYear
-  })).filter(m => m.entryId);
+    academicYear: row[17] || currentYear,
+    status: row[18] || "PRESENT",
+    isDeleted: row[19] === true
+  })).filter(m => m.entryId && (includeDeleted || !m.isDeleted));
   
   // Apply standard filters
   if (filters) {
@@ -541,39 +498,95 @@ function deleteMarks(entryId) {
   try {
     lock.waitLock(30000);
     
+    try { ensureYearNotFinalized("Deleting marks"); } catch (e) { return { success: false, message: e.message }; }
+    
     const sheet = SpreadsheetApp.getActive().getSheetByName("Marks_Master");
     const lastRow = sheet.getLastRow();
     if (lastRow <= 1) return { success: false, message: "Entry not found." };
     
-    const data = sheet.getRange(2, 1, lastRow - 1, 18).getValues();
+    const data = sheet.getRange(2, 1, lastRow - 1, 20).getValues();
     
     let foundIdx = -1;
     let foundExamId = null;
+    let foundRow = null;
     for (let i = 0; i < data.length; i++) {
-      if (data[i][0] === entryId) {
+      if (data[i][0] === entryId && data[i][19] !== true) {
         foundIdx = i;
         foundExamId = data[i][7];
+        foundRow = data[i];
         break;
       }
     }
     
     if (foundIdx === -1) {
-      return { success: false, message: "Entry not found." };
+      return { success: false, message: "Entry not found or already deleted." };
     }
     
-    // Check if exam is locked (Marks Edit Protection)
     if (isExamLocked(foundExamId)) {
       return { success: false, message: "Exam is locked. No edits allowed." };
     }
     
-    sheet.deleteRow(foundIdx + 2);
+    // Soft delete: flip IsDeleted to true
+    sheet.getRange(foundIdx + 2, 20).setValue(true);
+    sheet.getRange(foundIdx + 2, 16).setValue(new Date());
+    sheet.getRange(foundIdx + 2, 17).setValue(getActualUserEmail() || "System");
     
-    logAction("Delete Marks", `Deleted marks entry: ${entryId}`);
+    try { writeAudit("DELETE_MARKS", "Marks", entryId, "IsDeleted", "false", "true", { studentId: foundRow[1], subject: foundRow[3], examId: foundRow[7], previousMarks: foundRow[12], previousStatus: foundRow[18] }); } catch (e) {}
+    logAction("Delete Marks", `Soft-deleted marks entry: ${entryId}`);
     
-    return { success: true, message: "Marks entry deleted successfully!" };
+    return { success: true, message: "Marks entry moved to trash. Restore from Trash page if needed." };
   } finally {
     try { lock.releaseLock(); } catch (e) {}
   }
+}
+
+
+/**
+ * Restore a soft-deleted marks entry
+ */
+function restoreMarks(entryId) {
+  if (!isAdmin()) return { success: false, message: "Access denied. Admin only." };
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+    try { ensureYearNotFinalized("Restoring marks"); } catch (e) { return { success: false, message: e.message }; }
+    const sheet = SpreadsheetApp.getActive().getSheetByName("Marks_Master");
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return { success: false, message: "Entry not found." };
+    const data = sheet.getRange(2, 1, lastRow - 1, 20).getValues();
+    for (let i = 0; i < data.length; i++) {
+      if (data[i][0] === entryId && data[i][19] === true) {
+        sheet.getRange(i + 2, 20).setValue(false);
+        sheet.getRange(i + 2, 16).setValue(new Date());
+        sheet.getRange(i + 2, 17).setValue(getActualUserEmail() || "System");
+        try { writeAudit("RESTORE_MARKS", "Marks", entryId, "IsDeleted", "true", "false", {}); } catch (e) {}
+        return { success: true, message: "Marks entry restored." };
+      }
+    }
+    return { success: false, message: "Entry not found in trash." };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+
+/**
+ * Get soft-deleted marks (for Trash UI)
+ */
+function getDeletedMarks(page, limit) {
+  if (!isAdmin()) return { data: [], total: 0, page: 1, limit: 100, totalPages: 0, error: "Access denied." };
+  const all = getMarks({ includeDeleted: true, academicYear: null }).filter(m => m.isDeleted);
+  all.sort((a, b) => {
+    const ta = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+    const tb = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+    return tb - ta;
+  });
+  const total = all.length;
+  const lim = Math.max(1, parseInt(limit) || 100);
+  const totalPages = Math.max(1, Math.ceil(total / lim));
+  const pg = Math.min(Math.max(1, parseInt(page) || 1), totalPages);
+  const start = (pg - 1) * lim;
+  return { data: all.slice(start, start + lim), total, page: pg, limit: lim, totalPages };
 }
 
 
@@ -667,12 +680,15 @@ function adminBulkUploadMarks(data, columnMapping, options) {
   try {
     if (!previewOnly) lock.waitLock(30000);
     
+    try { ensureYearNotFinalized("Admin bulk upload marks"); } catch (e) { return { success: false, message: e.message }; }
+    
     // Default column mapping
     const mapping = columnMapping || {
       studentId: 0,
       subject: 1,
       examId: 2,
-      marks: 3
+      marks: 3,
+      status: 4
     };
     
     const ss = SpreadsheetApp.getActive();
@@ -680,10 +696,10 @@ function adminBulkUploadMarks(data, columnMapping, options) {
     // Cache: Students (one read)
     const studentsSheet = ss.getSheetByName("Students");
     const studentsLastRow = studentsSheet.getLastRow();
-    const studentsData = studentsLastRow > 1 ? studentsSheet.getRange(2, 1, studentsLastRow - 1, 15).getValues() : [];
+    const studentsData = studentsLastRow > 1 ? studentsSheet.getRange(2, 1, studentsLastRow - 1, 16).getValues() : [];
     const studentIndex = {};
     studentsData.forEach(row => {
-      if (row[0]) {
+      if (row[0] && row[15] !== true) {
         studentIndex[row[0]] = {
           name: row[1], class: row[2], section: row[3],
           stream: row[4], electiveSubject: row[10] || '',
@@ -695,18 +711,19 @@ function adminBulkUploadMarks(data, columnMapping, options) {
     // Cache: Exams (one read)
     const examsSheet = ss.getSheetByName("Exams");
     const examsLastRow = examsSheet.getLastRow();
-    const examsData = examsLastRow > 1 ? examsSheet.getRange(2, 1, examsLastRow - 1, 18).getValues() : [];
+    const examsData = examsLastRow > 1 ? examsSheet.getRange(2, 1, examsLastRow - 1, 19).getValues() : [];
     const examIndex = {};
     examsData.forEach(row => {
-      if (row[0]) examIndex[row[0]] = { name: row[1], maxMarks: row[4], locked: row[8] === true };
+      if (row[0] && row[18] !== true) examIndex[row[0]] = { name: row[1], maxMarks: row[4], locked: row[8] === true };
     });
     
-    // Cache: Marks_Master existing entries (for duplicate protection)
+    // Cache: Marks_Master existing entries
     const marksSheet = ss.getSheetByName("Marks_Master");
     const marksLastRow = marksSheet.getLastRow();
-    const existingMarks = marksLastRow > 1 ? marksSheet.getRange(2, 1, marksLastRow - 1, 18).getValues() : [];
+    const existingMarks = marksLastRow > 1 ? marksSheet.getRange(2, 1, marksLastRow - 1, 20).getValues() : [];
     const marksMap = {};
     existingMarks.forEach((row, idx) => {
+      if (row[19] === true) return;
       const key = `${row[1]}|${row[7]}|${String(row[3]).trim().toLowerCase()}`;
       marksMap[key] = { rowNum: idx + 2, entryId: row[0] };
     });
@@ -738,139 +755,97 @@ function adminBulkUploadMarks(data, columnMapping, options) {
       const studentId = String(row[mapping.studentId] || "").trim();
       const subject = String(row[mapping.subject] || "").trim();
       const examId = String(row[mapping.examId] || "").trim();
-      const marks = parseFloat(row[mapping.marks]);
+      const rawMarks = row[mapping.marks];
+      const marks = parseFloat(rawMarks);
+      const status = String(row[mapping.status] || "PRESENT").toUpperCase().trim() || "PRESENT";
       
-      if (!studentId) {
-        results.failed++;
-        results.errors.push({ row: rowIdx + 1, error: "Student ID is required" });
-        return;
+      if (!studentId) { results.failed++; results.errors.push({ row: rowIdx + 1, error: "Student ID is required" }); return; }
+      if (!subject) { results.failed++; results.errors.push({ row: rowIdx + 1, error: "Subject is required" }); return; }
+      if (!examId) { results.failed++; results.errors.push({ row: rowIdx + 1, error: "Exam ID is required" }); return; }
+      if (["PRESENT", "ABSENT", "EXEMPT"].indexOf(status) === -1) {
+        results.failed++; results.errors.push({ row: rowIdx + 1, error: `Invalid status "${status}". Use PRESENT/ABSENT/EXEMPT` }); return;
       }
-      if (!subject) {
-        results.failed++;
-        results.errors.push({ row: rowIdx + 1, error: "Subject is required" });
-        return;
-      }
-      if (!examId) {
-        results.failed++;
-        results.errors.push({ row: rowIdx + 1, error: "Exam ID is required" });
-        return;
-      }
-      if (isNaN(marks)) {
-        results.failed++;
-        results.errors.push({ row: rowIdx + 1, error: "Invalid marks value" });
-        return;
+      if (status === "PRESENT" && isNaN(marks)) {
+        results.failed++; results.errors.push({ row: rowIdx + 1, error: "Invalid marks value" }); return;
       }
       
       const student = studentIndex[studentId];
-      if (!student) {
-        results.failed++;
-        results.errors.push({ row: rowIdx + 1, error: `Student ${studentId} not found` });
-        return;
-      }
+      if (!student) { results.failed++; results.errors.push({ row: rowIdx + 1, error: `Student ${studentId} not found` }); return; }
       
       const exam = examIndex[examId];
-      if (!exam) {
-        results.failed++;
-        results.errors.push({ row: rowIdx + 1, error: `Exam ${examId} not found` });
-        return;
-      }
+      if (!exam) { results.failed++; results.errors.push({ row: rowIdx + 1, error: `Exam ${examId} not found` }); return; }
       
       if (exam.locked) {
         results.failed++;
-        results.lockedExams.push({ row: rowIdx + 1, examId: examId, examName: exam.name });
-        results.errors.push({ row: rowIdx + 1, error: `Exam "${exam.name}" is locked — no edits allowed` });
+        results.lockedExams.push({ row: rowIdx + 1, examId, examName: exam.name });
+        results.errors.push({ row: rowIdx + 1, error: `Exam "${exam.name}" is locked` });
         return;
       }
       
-      // Subject validity check
       if (!isSubjectValidForStudent(subject, student)) {
         results.failed++;
         results.errors.push({ row: rowIdx + 1, error: `Subject "${subject}" not valid for this student (Class ${student.class} ${student.stream})` });
         return;
       }
       
-      if (marks < 0 || marks > exam.maxMarks) {
-        results.failed++;
-        results.errors.push({ row: rowIdx + 1, error: `Marks must be 0-${exam.maxMarks}` });
-        return;
+      const marksValue = status === "PRESENT" ? marks : 0;
+      if (status === "PRESENT" && (marks < 0 || marks > exam.maxMarks)) {
+        results.failed++; results.errors.push({ row: rowIdx + 1, error: `Marks must be 0-${exam.maxMarks}` }); return;
       }
       
-      const percentage = (marks / exam.maxMarks) * 100;
-      const grade = calculateGrade(percentage);
+      const percentage = status === "PRESENT" ? (marks / exam.maxMarks) * 100 : 0;
+      const grade = status === "PRESENT" ? calculateGrade(percentage) : "-";
       const key = `${studentId}|${examId}|${subject.toLowerCase()}`;
       const existing = marksMap[key];
       const entryId = existing ? existing.entryId : `MRK${baseTime}${(idCounter++).toString(36)}`;
       
       const rowData = [
-        entryId,
-        studentId,
-        student.name,
-        subject,
-        "",
-        "ADMIN",
-        "Administrator",
-        examId,
-        exam.name,
-        student.class,
-        student.section,
-        exam.maxMarks,
-        marks,
-        percentage.toFixed(2),
-        grade,
-        new Date(),
-        getActualUserEmail() || "ADMIN",
-        academicYear
+        entryId, studentId, student.name, subject, "",
+        "ADMIN", "Administrator", examId, exam.name, student.class, student.section,
+        exam.maxMarks, marksValue,
+        status === "PRESENT" ? percentage.toFixed(2) : 0,
+        grade, new Date(), getActualUserEmail() || "ADMIN", academicYear,
+        status, false
       ];
       
       if (existing) {
         if (!previewOnly) updateRows.push({ rowNum: existing.rowNum, data: rowData });
         results.updated++;
         results.preview.push({
-          studentId: studentId, studentName: student.name, subject: subject,
-          examName: exam.name, marks: marks, maxMarks: exam.maxMarks,
-          percentage: percentage.toFixed(1) + "%", grade: grade, status: "UPDATE"
+          studentId, studentName: student.name, subject, examName: exam.name,
+          marks: marksValue, maxMarks: exam.maxMarks,
+          percentage: percentage.toFixed(1) + "%", grade, status: "UPDATE", entryStatus: status
         });
       } else {
         if (!previewOnly) newRows.push(rowData);
-        marksMap[key] = { rowNum: -1, entryId: entryId };
+        marksMap[key] = { rowNum: -1, entryId };
         results.created++;
         results.preview.push({
-          studentId: studentId, studentName: student.name, subject: subject,
-          examName: exam.name, marks: marks, maxMarks: exam.maxMarks,
-          percentage: percentage.toFixed(1) + "%", grade: grade, status: "NEW"
+          studentId, studentName: student.name, subject, examName: exam.name,
+          marks: marksValue, maxMarks: exam.maxMarks,
+          percentage: percentage.toFixed(1) + "%", grade, status: "NEW", entryStatus: status
         });
       }
     });
     
-    // Preview: return without writing
     if (previewOnly) {
-      return {
-        success: true,
-        preview: true,
-        results: results,
-        message: `Preview: ${results.created} new, ${results.updated} updates, ${results.failed} failed`
-      };
+      return { success: true, preview: true, results, message: `Preview: ${results.created} new, ${results.updated} updates, ${results.failed} failed` };
     }
     
-    // Batch write new rows
     if (newRows.length > 0) {
       const writeStart = marksSheet.getLastRow() + 1;
-      marksSheet.getRange(writeStart, 1, newRows.length, 18).setValues(newRows);
+      marksSheet.getRange(writeStart, 1, newRows.length, 20).setValues(newRows);
     }
+    updateRows.forEach(u => marksSheet.getRange(u.rowNum, 1, 1, 20).setValues([u.data]));
     
-    // Apply updates
-    updateRows.forEach(u => {
-      marksSheet.getRange(u.rowNum, 1, 1, 18).setValues([u.data]);
-    });
-    
+    try { writeAudit("ADMIN_BULK_UPLOAD_MARKS", "Marks", "BULK", "*", "", `${results.created}/${results.updated}`, { created: results.created, updated: results.updated, failed: results.failed }); } catch (e) {}
     logAction("Admin Bulk Upload Marks", `Created: ${results.created}, Updated: ${results.updated}, Failed: ${results.failed}`);
     
-    return {
-      success: true,
-      preview: false,
-      results: results,
-      message: `Import complete: ${results.created} created, ${results.updated} updated, ${results.failed} failed`
-    };
+    if (results.created + results.updated > 0) {
+      try { if (typeof rebuildAggregates === 'function') rebuildAggregates(); } catch (e) {}
+    }
+    
+    return { success: true, preview: false, results, message: `Import complete: ${results.created} created, ${results.updated} updated, ${results.failed} failed` };
   } finally {
     try { lock.releaseLock(); } catch (e) {}
   }

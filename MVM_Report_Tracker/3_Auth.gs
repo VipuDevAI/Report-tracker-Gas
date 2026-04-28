@@ -111,45 +111,329 @@ function getCurrentUserRole() {
 
 
 /**
- * Verify user email (for login form)
- * @param {string} email - Email to verify
- * @returns {Object} { registered: boolean, role: string, message: string }
+ * STEP 1 of login: verify email exists and check password setup status
+ * @param {string} email
+ * @returns {Object} { registered, role, requiresPasswordSetup, message }
+ *   - requiresPasswordSetup=true → frontend should show "set new password" screen
+ *   - requiresPasswordSetup=false → frontend should show password-entry screen
  */
 function verifyUserEmail(email) {
   if (!email) {
-    return { 
-      registered: false, 
-      role: null, 
-      message: "Please enter an email address." 
+    return { registered: false, role: null, requiresPasswordSetup: false, message: "Please enter an email address." };
+  }
+  email = email.trim().toLowerCase();
+  
+  // Determine role first
+  let role = null;
+  if (ADMIN_EMAIL_LIST.map(e => e.toLowerCase()).includes(email)) {
+    role = "admin";
+  } else {
+    const teacher = getTeacherByEmail(email);
+    if (teacher) role = "teacher";
+  }
+  if (!role) {
+    return {
+      registered: false, role: null, requiresPasswordSetup: false,
+      message: `Email "${email}" is not registered. Please contact the administrator.`
     };
   }
   
+  // Check Auth sheet for password presence
+  const auth = _findAuthRow(email);
+  const hasPassword = auth && auth.row[1]; // PasswordHash column
+  const mustChange = auth && (auth.row[3] === true || String(auth.row[3]).toLowerCase() === "true");
+  
+  return {
+    registered: true,
+    role: role,
+    requiresPasswordSetup: !hasPassword || mustChange,
+    message: !hasPassword
+      ? "First-time login: please set a password."
+      : mustChange
+        ? "Password reset required by admin. Please set a new password."
+        : "Please enter your password."
+  };
+}
+
+
+/**
+ * STEP 2a: Set initial password (first-time user) or change password
+ * @param {string} email
+ * @param {string} newPassword - min 8 chars
+ * @param {string} [oldPassword] - required if user already has a password (and not in mustChange state)
+ * @returns {Object} { success, message, sessionToken?, role?, sessionExpiry? }
+ */
+function setUserPassword(email, newPassword, oldPassword) {
+  if (!email || !newPassword) {
+    return { success: false, message: "Email and new password are required." };
+  }
+  if (String(newPassword).length < 8) {
+    return { success: false, message: "Password must be at least 8 characters long." };
+  }
   email = email.trim().toLowerCase();
   
-  // Check if admin
+  // Confirm user is registered
   const adminEmails = ADMIN_EMAIL_LIST.map(e => e.toLowerCase());
-  if (adminEmails.includes(email)) {
-    // Store logged in email for backend access checks
-    setLoggedInUser(email);
-    logAction("Login", `Admin login: ${email}`);
-    return { registered: true, role: "admin", message: "Welcome, Admin!" };
+  let role = null;
+  if (adminEmails.includes(email)) role = "admin";
+  else if (getTeacherByEmail(email)) role = "teacher";
+  if (!role) {
+    return { success: false, message: "Email not registered." };
   }
   
-  // Check if teacher exists in Teachers sheet
-  const teacher = getTeacherByEmail(email);
-  if (teacher) {
-    // Store logged in email for backend access checks
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(15000);
+    
+    const sheet = SpreadsheetApp.getActive().getSheetByName("Auth");
+    if (!sheet) return { success: false, message: "Auth sheet missing. Run Initialize App." };
+    
+    const auth = _findAuthRow(email);
+    const hasPassword = auth && auth.row[1];
+    const mustChange = auth && (auth.row[3] === true || String(auth.row[3]).toLowerCase() === "true");
+    
+    // If user already has password and is NOT in must-change state → require oldPassword
+    if (hasPassword && !mustChange) {
+      if (!oldPassword) {
+        return { success: false, message: "Old password is required to change password." };
+      }
+      const oldHash = hashPassword(oldPassword, auth.row[2]);
+      if (oldHash !== auth.row[1]) {
+        try { writeAudit("PASSWORD_CHANGE_FAIL", "Auth", email, "PasswordHash", "", "", { reason: "wrong old password" }); } catch (e) {}
+        return { success: false, message: "Old password is incorrect." };
+      }
+    }
+    
+    const salt = generateSalt();
+    const hash = hashPassword(newPassword, salt);
+    const sessionToken = Utilities.getUuid();
+    const sessionDuration = parseInt(getSchoolSetting("SessionDurationHours") || "8", 10) || 8;
+    const sessionExpiry = new Date(Date.now() + sessionDuration * 3600 * 1000);
+    const now = new Date();
+    
+    const newRow = [email, hash, salt, false, sessionToken, sessionExpiry, 0, now, auth ? auth.row[8] : now];
+    if (auth) {
+      sheet.getRange(auth.rowNum, 1, 1, 9).setValues([newRow]);
+    } else {
+      sheet.appendRow(newRow);
+    }
+    
     setLoggedInUser(email);
-    logAction("Login", `Teacher login: ${email}`);
-    return { registered: true, role: "teacher", message: `Welcome, ${teacher.name}!` };
+    writeAudit("PASSWORD_SET", "Auth", email, "PasswordHash", "", "(hashed)", { firstTime: !hasPassword });
+    logAction("Password Set", `${email} set/changed password`);
+    
+    return {
+      success: true,
+      message: "Password set successfully. You are now logged in.",
+      sessionToken: sessionToken,
+      sessionExpiry: sessionExpiry.toISOString(),
+      role: role
+    };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
   }
+}
+
+
+/**
+ * STEP 2b: Login with email + password
+ * @param {string} email
+ * @param {string} password
+ * @returns {Object} { success, sessionToken, sessionExpiry, role, name, message }
+ */
+function loginWithPassword(email, password) {
+  if (!email || !password) {
+    return { success: false, message: "Email and password are required." };
+  }
+  email = email.trim().toLowerCase();
   
-  // Not registered
-  return { 
-    registered: false, 
-    role: null, 
-    message: `Email "${email}" is not registered. Please contact the administrator.` 
-  };
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(15000);
+    
+    const auth = _findAuthRow(email);
+    if (!auth || !auth.row[1]) {
+      logAction("Login Fail", `No password set for ${email}`);
+      writeAudit("LOGIN_FAIL", "Auth", email, "", "", "", { reason: "no password set" });
+      return { success: false, message: "No password set. Please use 'First-time login' to set one.", requiresPasswordSetup: true };
+    }
+    
+    const failedAttempts = parseInt(auth.row[6] || 0, 10);
+    if (failedAttempts >= 5) {
+      // Soft lockout
+      const lastLogin = auth.row[7] ? new Date(auth.row[7]) : new Date(0);
+      const lockoutMs = 15 * 60 * 1000;
+      if (Date.now() - lastLogin.getTime() < lockoutMs) {
+        writeAudit("LOGIN_LOCKED", "Auth", email, "", "", "", { failedAttempts });
+        return { success: false, message: "Account temporarily locked due to too many failed attempts. Try again in 15 minutes." };
+      }
+    }
+    
+    const hash = hashPassword(password, auth.row[2]);
+    if (hash !== auth.row[1]) {
+      const newFailedCount = failedAttempts + 1;
+      const sheet = SpreadsheetApp.getActive().getSheetByName("Auth");
+      sheet.getRange(auth.rowNum, 7).setValue(newFailedCount);
+      sheet.getRange(auth.rowNum, 8).setValue(new Date());
+      logAction("Login Fail", `Wrong password for ${email} (attempt ${newFailedCount})`);
+      writeAudit("LOGIN_FAIL", "Auth", email, "", "", "", { reason: "wrong password", failedAttempts: newFailedCount });
+      return { success: false, message: `Invalid password. ${5 - newFailedCount} attempts remaining.` };
+    }
+    
+    // Determine role (must still be valid — admin list or active teacher)
+    let role = null;
+    if (ADMIN_EMAIL_LIST.map(e => e.toLowerCase()).includes(email)) role = "admin";
+    else {
+      const teacher = getTeacherByEmail(email);
+      if (teacher) role = "teacher";
+    }
+    if (!role) {
+      writeAudit("LOGIN_FAIL", "Auth", email, "", "", "", { reason: "user no longer registered" });
+      return { success: false, message: "Your account is no longer active. Contact admin." };
+    }
+    
+    const sessionToken = Utilities.getUuid();
+    const sessionDuration = parseInt(getSchoolSetting("SessionDurationHours") || "8", 10) || 8;
+    const sessionExpiry = new Date(Date.now() + sessionDuration * 3600 * 1000);
+    
+    const sheet = SpreadsheetApp.getActive().getSheetByName("Auth");
+    sheet.getRange(auth.rowNum, 5).setValue(sessionToken);
+    sheet.getRange(auth.rowNum, 6).setValue(sessionExpiry);
+    sheet.getRange(auth.rowNum, 7).setValue(0); // reset failed attempts
+    sheet.getRange(auth.rowNum, 8).setValue(new Date());
+    
+    setLoggedInUser(email);
+    PropertiesService.getUserProperties().setProperty('sessionToken', sessionToken);
+    
+    const teacher = role === "teacher" ? getTeacherByEmail(email) : null;
+    const name = teacher ? teacher.name : email.split("@")[0];
+    
+    logAction("Login", `${role} login: ${email}`);
+    writeAudit("LOGIN_SUCCESS", "Auth", email, "", "", "", { role });
+    
+    return {
+      success: true,
+      sessionToken: sessionToken,
+      sessionExpiry: sessionExpiry.toISOString(),
+      role: role,
+      name: name,
+      email: email,
+      message: `Welcome, ${name}!`
+    };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+
+/**
+ * Validate a session token; returns user info or null
+ * @param {string} sessionToken
+ * @returns {Object|null}
+ */
+function validateSession(sessionToken) {
+  if (!sessionToken) return null;
+  const sheet = SpreadsheetApp.getActive().getSheetByName("Auth");
+  if (!sheet || sheet.getLastRow() <= 1) return null;
+  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 9).getValues();
+  for (let i = 0; i < data.length; i++) {
+    if (data[i][4] === sessionToken) {
+      const expiry = data[i][5] ? new Date(data[i][5]) : null;
+      if (!expiry || expiry.getTime() < Date.now()) return null;
+      const email = String(data[i][0]).toLowerCase();
+      const role = ADMIN_EMAIL_LIST.map(e => e.toLowerCase()).includes(email) ? "admin"
+                 : getTeacherByEmail(email) ? "teacher" : null;
+      if (!role) return null;
+      setLoggedInUser(email);
+      return { email, role, sessionExpiry: expiry.toISOString() };
+    }
+  }
+  return null;
+}
+
+
+/**
+ * Logout: invalidate session
+ * @param {string} sessionToken - optional; if omitted, uses stored email's session
+ * @returns {Object}
+ */
+function logoutUser(sessionToken) {
+  try {
+    const email = getLoggedInUser();
+    if (email) {
+      const auth = _findAuthRow(email);
+      if (auth) {
+        const sheet = SpreadsheetApp.getActive().getSheetByName("Auth");
+        sheet.getRange(auth.rowNum, 5).setValue("");
+        sheet.getRange(auth.rowNum, 6).setValue("");
+      }
+      writeAudit("LOGOUT", "Auth", email, "", "", "", {});
+      logAction("Logout", email);
+    }
+  } catch (e) {}
+  PropertiesService.getUserProperties().deleteProperty('loggedInEmail');
+  PropertiesService.getUserProperties().deleteProperty('sessionToken');
+  return { success: true, message: "Logged out." };
+}
+
+
+/**
+ * Admin: reset another user's password (forces them to set new on next login)
+ * @param {string} targetEmail
+ * @returns {Object}
+ */
+function adminResetUserPassword(targetEmail) {
+  if (!isAdmin()) return { success: false, message: "Admin access required." };
+  if (!targetEmail) return { success: false, message: "Target email required." };
+  targetEmail = targetEmail.trim().toLowerCase();
+  
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(15000);
+    const sheet = SpreadsheetApp.getActive().getSheetByName("Auth");
+    if (!sheet) return { success: false, message: "Auth sheet missing." };
+    const auth = _findAuthRow(targetEmail);
+    if (!auth) {
+      sheet.appendRow([targetEmail, "", "", true, "", "", 0, "", new Date()]);
+    } else {
+      sheet.getRange(auth.rowNum, 2).setValue(""); // clear hash
+      sheet.getRange(auth.rowNum, 3).setValue(""); // clear salt
+      sheet.getRange(auth.rowNum, 4).setValue(true); // mustChange
+      sheet.getRange(auth.rowNum, 5).setValue(""); // invalidate session
+      sheet.getRange(auth.rowNum, 6).setValue("");
+      sheet.getRange(auth.rowNum, 7).setValue(0);
+    }
+    writeAudit("PASSWORD_RESET_BY_ADMIN", "Auth", targetEmail, "PasswordHash", "(was set)", "", { resetBy: getActualUserEmail() });
+    logAction("Admin Reset Password", `${getActualUserEmail()} reset password for ${targetEmail}`);
+    return { success: true, message: `Password for ${targetEmail} cleared. They must set a new password on next login.` };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+
+/**
+ * List Auth records (admin only) — for password management UI
+ */
+function listAuthUsers() {
+  if (!isAdmin()) return [];
+  const sheet = SpreadsheetApp.getActive().getSheetByName("Auth");
+  if (!sheet || sheet.getLastRow() <= 1) return [];
+  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 9).getValues();
+  return data.map(r => ({
+    email: r[0],
+    hasPassword: !!r[1],
+    mustChangePassword: r[3] === true || String(r[3]).toLowerCase() === "true",
+    failedAttempts: r[6] || 0,
+    lastLogin: r[7],
+    createdAt: r[8]
+  })).filter(u => u.email);
+}
+
+
+// Legacy compat — if old code calls this, treat as a simple email-only "session"
+function verifyUserEmailLegacy(email) {
+  return verifyUserEmail(email);
 }
 
 

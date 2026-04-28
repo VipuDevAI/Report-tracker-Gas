@@ -1097,25 +1097,8 @@ function getSchoolSettings() {
  * @param {string} value - Setting value
  * @returns {Object} Result object
  */
-function updateSchoolSetting(key, value) {
-  if (!isAdmin()) {
-    return { success: false, message: "Access denied." };
-  }
-  
-  const sheet = SpreadsheetApp.getActive().getSheetByName("Settings_School");
-  const data = sheet.getDataRange().getValues();
-  
-  const rowIndex = data.findIndex(r => r[0] === key);
-  
-  if (rowIndex === -1) {
-    sheet.appendRow([key, value, new Date()]);
-  } else {
-    sheet.getRange(rowIndex + 1, 2, 1, 2).setValues([[value, new Date()]]);
-  }
-  
-  logAction("Update Setting", `${key} = ${value}`);
-  
-  return { success: true, message: "Setting updated successfully!" };
+function updateSchoolSettingFromUI(key, value) {
+  return adminUpdateSchoolSetting(key, value);
 }
 
 

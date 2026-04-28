@@ -19,19 +19,27 @@ function rebuildAggregates() {
     aggSheet.getRange(2, 1, aggSheet.getLastRow() - 1, aggSheet.getLastColumn()).clearContent();
   }
   
-  const marksData = marksSheet.getDataRange().getValues();
-  if (marksData.length <= 1) {
+  const lastRow = marksSheet.getLastRow();
+  if (lastRow <= 1) {
+    if (typeof markAggregatesUpdated === 'function') markAggregatesUpdated();
     return { success: true, message: "No marks data to analyze." };
   }
   
-  // Filter by current academic year
-  const marks = marksData.slice(1).filter(row => {
+  const marksData = marksSheet.getRange(2, 1, lastRow - 1, 20).getValues();
+  
+  // Filter: current year + not deleted + status PRESENT (exclude ABSENT/EXEMPT from analytics)
+  const marks = marksData.filter(row => {
     const rowYear = row[17] || currentYear;
-    return rowYear === currentYear;
+    if (rowYear !== currentYear) return false;
+    if (row[19] === true) return false; // IsDeleted
+    const status = String(row[18] || "PRESENT").toUpperCase();
+    if (status !== "PRESENT") return false;
+    return true;
   });
   
   if (marks.length === 0) {
-    return { success: true, message: "No marks data for current academic year." };
+    if (typeof markAggregatesUpdated === 'function') markAggregatesUpdated();
+    return { success: true, message: "No PRESENT marks data for current academic year." };
   }
   
   const aggregates = [];
@@ -42,10 +50,8 @@ function rebuildAggregates() {
   marks.forEach(row => {
     const subject = row[3];
     const percentage = parseFloat(row[13]);
-    
-    if (!subjectStats[subject]) {
-      subjectStats[subject] = { total: 0, count: 0, min: 100, max: 0 };
-    }
+    if (isNaN(percentage)) return;
+    if (!subjectStats[subject]) subjectStats[subject] = { total: 0, count: 0, min: 100, max: 0 };
     subjectStats[subject].total += percentage;
     subjectStats[subject].count++;
     subjectStats[subject].min = Math.min(subjectStats[subject].min, percentage);
@@ -62,14 +68,10 @@ function rebuildAggregates() {
   // Class averages
   const classStats = {};
   marks.forEach(row => {
-    const cls = row[9];
-    const section = row[10];
-    const key = `${cls}-${section}`;
+    const key = `${row[9]}-${row[10]}`;
     const percentage = parseFloat(row[13]);
-    
-    if (!classStats[key]) {
-      classStats[key] = { total: 0, count: 0, passed: 0 };
-    }
+    if (isNaN(percentage)) return;
+    if (!classStats[key]) classStats[key] = { total: 0, count: 0, passed: 0 };
     classStats[key].total += percentage;
     classStats[key].count++;
     if (percentage >= 40) classStats[key].passed++;
@@ -87,10 +89,8 @@ function rebuildAggregates() {
     const teacherId = row[5];
     const teacherName = row[6];
     const percentage = parseFloat(row[13]);
-    
-    if (!teacherStats[teacherId]) {
-      teacherStats[teacherId] = { name: teacherName, total: 0, count: 0 };
-    }
+    if (isNaN(percentage)) return;
+    if (!teacherStats[teacherId]) teacherStats[teacherId] = { name: teacherName, total: 0, count: 0 };
     teacherStats[teacherId].total += percentage;
     teacherStats[teacherId].count++;
   });
@@ -100,10 +100,11 @@ function rebuildAggregates() {
     aggregates.push(["TEACHER_AVG", teacherId, stats.name, (stats.total / stats.count).toFixed(2), stats.count, now]);
   });
   
-  // Grade distribution (using numeric ranges)
+  // Grade distribution
   const gradeDistribution = { "91-100": 0, "81-90": 0, "71-80": 0, "61-70": 0, "51-60": 0, "41-50": 0, "0-40": 0 };
   marks.forEach(row => {
     const percentage = parseFloat(row[13]);
+    if (isNaN(percentage)) return;
     if (percentage >= 91) gradeDistribution["91-100"]++;
     else if (percentage >= 81) gradeDistribution["81-90"]++;
     else if (percentage >= 71) gradeDistribution["71-80"]++;
@@ -117,18 +118,13 @@ function rebuildAggregates() {
     aggregates.push(["RANGE_DIST", range, "", gradeDistribution[range], marks.length, now]);
   });
   
-  // Range distribution (removed - already covered above)
-  
-  Object.keys(rangeDistribution).forEach(range => {
-    aggregates.push(["SCORE_RANGE", range, "", rangeDistribution[range], marks.length, now]);
-  });
-  
   // Write aggregates
   if (aggregates.length > 0) {
     aggSheet.getRange(2, 1, aggregates.length, 6).setValues(aggregates);
   }
   
   logAction("Rebuild Analytics", `Generated ${aggregates.length} aggregate entries for ${currentYear}`);
+  if (typeof markAggregatesUpdated === 'function') markAggregatesUpdated();
   
   return { success: true, message: `Analytics rebuilt. ${aggregates.length} entries generated for ${currentYear}.` };
 }
@@ -136,13 +132,16 @@ function rebuildAggregates() {
 
 /**
  * Get weak students (below threshold)
- * Applies teacher filtering for non-admin users
+ * Applies teacher filtering for non-admin users; excludes ABSENT/EXEMPT
  * @param {Object} filters - Optional filters (class, section, subject)
  * @returns {Array} Weak students list
  */
 function getWeakStudents(filters) {
-  const marks = getMarks(filters); // Already filtered by teacher assignment
+  const allMarks = getMarks(filters);
   const threshold = 40;
+  
+  // Exclude ABSENT/EXEMPT from weak student calculation
+  const marks = allMarks.filter(m => String(m.status || "PRESENT").toUpperCase() === "PRESENT");
   
   const weakStudents = marks.filter(m => m.percentage < threshold);
   
@@ -183,7 +182,7 @@ function getWeakStudents(filters) {
  * @returns {Array} Toppers list
  */
 function getToppers(filters, limit) {
-  const marks = getMarks(filters); // Already filtered by teacher assignment
+  const marks = getMarks(filters).filter(m => String(m.status || "PRESENT").toUpperCase() === "PRESENT"); // exclude ABSENT/EXEMPT
   
   // Group by student and calculate overall percentage
   const studentMap = {};
@@ -222,7 +221,7 @@ function getToppers(filters, limit) {
  * @returns {Array} Subject performance data
  */
 function getSubjectPerformance(filters) {
-  const marks = getMarks(filters); // Already filtered by teacher assignment
+  const marks = getMarks(filters).filter(m => String(m.status || "PRESENT").toUpperCase() === "PRESENT"); // exclude ABSENT/EXEMPT
   
   const subjectMap = {};
   marks.forEach(m => {
@@ -268,7 +267,7 @@ function getSubjectPerformance(filters) {
  * @returns {Array} Class performance data
  */
 function getClassPerformance(filters) {
-  const marks = getMarks(filters); // Already filtered by teacher assignment
+  const marks = getMarks(filters).filter(m => String(m.status || "PRESENT").toUpperCase() === "PRESENT"); // exclude ABSENT/EXEMPT
   
   const classMap = {};
   marks.forEach(m => {
@@ -309,7 +308,7 @@ function getClassPerformance(filters) {
  * @returns {Array} Teacher performance data
  */
 function getTeacherPerformance() {
-  const marks = getMarks(); // Already filtered by teacher assignment
+  const marks = getMarks().filter(m => String(m.status || "PRESENT").toUpperCase() === "PRESENT"); // exclude ABSENT/EXEMPT
   
   const teacherMap = {};
   marks.forEach(m => {
@@ -350,7 +349,7 @@ function getTeacherPerformance() {
  * @returns {Object} Range distribution data
  */
 function getRangeDistribution(filters) {
-  const marks = getMarks(filters); // Already filtered by teacher assignment
+  const marks = getMarks(filters).filter(m => String(m.status || "PRESENT").toUpperCase() === "PRESENT"); // exclude ABSENT/EXEMPT
   
   const distribution = {
     "91-100": { count: 0, label: "A+ (91-100%)", color: "#22c55e" },
