@@ -1129,3 +1129,363 @@ function getGradeRanges() {
 function canGenerateReportCards() {
   return isAdmin();
 }
+
+
+/* ========================================================================
+   BATCHED PDF REPORT CARD GENERATION
+   - Per class/section, chunked processing with resume capability
+   - Job state in DocumentProperties (survives across executions)
+   - Folder layout: MVM_Report_Cards / {AcademicYear} / Class_{X}{Section}
+   ======================================================================== */
+
+const PDF_JOB_PREFIX = "pdf_job_";
+const PDF_DEFAULT_CHUNK_SIZE = 25;
+const PDF_MAX_CHUNK_RUNTIME_MS = 4 * 60 * 1000; // stop chunk early at 4 min to be safe vs 6-min limit
+
+
+/**
+ * Get the year-scoped report cards root folder, creating if missing.
+ * Layout: MVM_Report_Cards / {AcademicYear}
+ */
+function getYearScopedReportFolder(academicYear) {
+  const root = getOrCreateReportFolder(); // existing function returns "MVM_Report_Cards"
+  const yearName = String(academicYear || getCurrentAcademicYear());
+  const it = root.getFoldersByName(yearName);
+  if (it.hasNext()) return it.next();
+  return root.createFolder(yearName);
+}
+
+
+/**
+ * Get the class/section folder under the year folder.
+ * Layout: MVM_Report_Cards / {AcademicYear} / Class_{X}{Section}
+ */
+function getClassReportFolder(academicYear, classNum, section) {
+  const yearFolder = getYearScopedReportFolder(academicYear);
+  const folderName = `Class_${classNum}${section ? section : ''}`;
+  const it = yearFolder.getFoldersByName(folderName);
+  if (it.hasNext()) return it.next();
+  return yearFolder.createFolder(folderName);
+}
+
+
+function _pdfJobKey(jobId) {
+  return PDF_JOB_PREFIX + String(jobId);
+}
+
+
+function _pdfJobScope() {
+  // DocumentProperties is shared across users for this script — appropriate for admin batch jobs
+  return PropertiesService.getDocumentProperties();
+}
+
+
+function _pdfLoadJob(jobId) {
+  const raw = _pdfJobScope().getProperty(_pdfJobKey(jobId));
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch (e) { return null; }
+}
+
+
+function _pdfSaveJob(job) {
+  _pdfJobScope().setProperty(_pdfJobKey(job.jobId), JSON.stringify(job));
+}
+
+
+function _pdfDeleteJob(jobId) {
+  _pdfJobScope().deleteProperty(_pdfJobKey(jobId));
+}
+
+
+/**
+ * List active PDF jobs (admin only) — for resume UI
+ */
+function listPdfJobs() {
+  if (!isAdmin()) return [];
+  const props = _pdfJobScope().getProperties();
+  const jobs = [];
+  Object.keys(props).forEach(k => {
+    if (k.indexOf(PDF_JOB_PREFIX) === 0) {
+      try {
+        const j = JSON.parse(props[k]);
+        jobs.push({
+          jobId: j.jobId,
+          status: j.status,
+          classNum: j.classNum,
+          section: j.section,
+          examId: j.examId,
+          examName: j.examName,
+          academicYear: j.academicYear,
+          totalStudents: j.totalStudents,
+          completed: j.completed,
+          failed: (j.errors || []).length,
+          startedAt: j.startedAt,
+          updatedAt: j.updatedAt,
+          folderUrl: j.folderUrl
+        });
+      } catch (e) {}
+    }
+  });
+  jobs.sort((a, b) => new Date(b.updatedAt || b.startedAt).getTime() - new Date(a.updatedAt || a.startedAt).getTime());
+  return jobs;
+}
+
+
+/**
+ * Start (or restart) a batched report-card generation job.
+ * @param {string|number} classNum
+ * @param {string} section - section name; empty/null for whole class
+ * @param {string} examId
+ * @param {number} [chunkSize] - default 25
+ * @returns {Object} { success, jobId, totalStudents, message, ... }
+ */
+function startBatchedReportCardGeneration(classNum, section, examId, chunkSize) {
+  if (!isAdmin()) {
+    return { success: false, message: "Access denied. Admin only." };
+  }
+  if (!classNum) return { success: false, message: "Class is required." };
+  if (!examId) return { success: false, message: "Exam is required." };
+  
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(15000);
+    
+    // Validate exam
+    const exam = getExamById(examId);
+    if (!exam) return { success: false, message: "Exam not found." };
+    
+    // Build student list (one read, filtered)
+    const studentsSheet = SpreadsheetApp.getActive().getSheetByName("Students");
+    const lastRow = studentsSheet.getLastRow();
+    if (lastRow <= 1) return { success: false, message: "No students found." };
+    const data = studentsSheet.getRange(2, 1, lastRow - 1, 16).getValues();
+    
+    let students = data
+      .filter(row => row[0] && row[15] !== true && row[9] === "Active" && String(row[2]) == String(classNum))
+      .map(row => ({ studentId: row[0], name: row[1], rollNo: row[5], section: row[3] }));
+    
+    if (section) students = students.filter(s => s.section === section);
+    if (students.length === 0) {
+      return { success: false, message: `No active students found for Class ${classNum}${section ? ' ' + section : ''}.` };
+    }
+    
+    students.sort((a, b) => parseInt(a.rollNo) - parseInt(b.rollNo));
+    
+    const academicYear = getCurrentAcademicYear();
+    const folder = getClassReportFolder(academicYear, classNum, section);
+    
+    const jobId = `J${Date.now()}${Math.floor(Math.random() * 1000)}`;
+    const job = {
+      jobId,
+      status: "RUNNING",
+      classNum: String(classNum),
+      section: section || "",
+      examId,
+      examName: exam.name,
+      academicYear,
+      chunkSize: Math.max(5, parseInt(chunkSize) || PDF_DEFAULT_CHUNK_SIZE),
+      students,                  // ordered list of { studentId, name, rollNo, section }
+      totalStudents: students.length,
+      completed: 0,
+      cursor: 0,                  // next index to process
+      generatedFiles: [],         // { studentId, name, fileName, url }
+      errors: [],                 // { studentId, error }
+      folderId: folder.getId(),
+      folderUrl: folder.getUrl(),
+      startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    
+    _pdfSaveJob(job);
+    try { writeAudit("PDF_JOB_START", "Reports", jobId, "*", "", `${students.length} students`, { classNum, section, examId }); } catch (e) {}
+    logAction("PDF Job Start", `${jobId}: Class ${classNum}${section ? ' ' + section : ''}, exam ${exam.name}, ${students.length} students`);
+    
+    return {
+      success: true,
+      jobId,
+      totalStudents: students.length,
+      folderUrl: job.folderUrl,
+      chunkSize: job.chunkSize,
+      message: `Job started: ${students.length} students. Call processBatchedReportCardChunk('${jobId}') to begin.`
+    };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+
+/**
+ * Process ONE chunk of an existing job. Designed to be called repeatedly from the UI.
+ * Stops early if elapsed time exceeds PDF_MAX_CHUNK_RUNTIME_MS, so the next call resumes safely.
+ * @param {string} jobId
+ * @returns {Object} { success, status: 'RUNNING'|'COMPLETE'|'PAUSED', completed, totalStudents, percentage, errors, folderUrl, message }
+ */
+function processBatchedReportCardChunk(jobId) {
+  if (!isAdmin()) return { success: false, message: "Access denied. Admin only." };
+  
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+    
+    const job = _pdfLoadJob(jobId);
+    if (!job) return { success: false, message: "Job not found. Start a new job." };
+    
+    if (job.status === "COMPLETE") {
+      return {
+        success: true, status: "COMPLETE", jobId, completed: job.completed, totalStudents: job.totalStudents,
+        percentage: 100, folderUrl: job.folderUrl, errors: job.errors,
+        message: "Job already complete."
+      };
+    }
+    
+    job.status = "RUNNING";
+    
+    // Re-fetch folder
+    let folder;
+    try { folder = DriveApp.getFolderById(job.folderId); }
+    catch (e) {
+      folder = getClassReportFolder(job.academicYear, job.classNum, job.section);
+      job.folderId = folder.getId();
+      job.folderUrl = folder.getUrl();
+    }
+    
+    const chunkStart = Date.now();
+    let processedThisChunk = 0;
+    
+    while (job.cursor < job.totalStudents && processedThisChunk < job.chunkSize) {
+      // Time-budget guard: leave 90 sec headroom for finalization
+      if (Date.now() - chunkStart > PDF_MAX_CHUNK_RUNTIME_MS) {
+        break;
+      }
+      
+      const student = job.students[job.cursor];
+      try {
+        const report = generateStudentReport(student.studentId, job.examId);
+        if (!report.success) {
+          job.errors.push({ studentId: student.studentId, name: student.name, error: report.message || "report failed" });
+        } else {
+          // Rank within this class job is computed on completion (or skipped to keep chunks simple)
+          const html = generateReportCardHTML(report);
+          const fileName = `${String(student.rollNo || job.cursor + 1).padStart(3, '0')}_${(student.name || 'student').replace(/[^A-Za-z0-9 _-]/g, '')}.pdf`;
+          const blob = HtmlService.createHtmlOutput(html)
+            .getBlob()
+            .setName(fileName)
+            .getAs('application/pdf');
+          const file = folder.createFile(blob);
+          job.generatedFiles.push({
+            studentId: student.studentId,
+            name: student.name,
+            fileName: file.getName(),
+            url: file.getUrl()
+          });
+        }
+      } catch (e) {
+        job.errors.push({ studentId: student.studentId, name: student.name, error: String(e && e.message || e) });
+      }
+      
+      job.cursor++;
+      job.completed++;
+      processedThisChunk++;
+      
+      // Persist mid-chunk every 10 to make resume robust to hard timeouts
+      if (processedThisChunk % 10 === 0) {
+        job.updatedAt = new Date().toISOString();
+        _pdfSaveJob(job);
+      }
+    }
+    
+    // Finalize state
+    if (job.cursor >= job.totalStudents) {
+      job.status = "COMPLETE";
+      try { writeAudit("PDF_JOB_COMPLETE", "Reports", jobId, "*", "", `${job.completed} done, ${job.errors.length} failed`, {}); } catch (e) {}
+      logAction("PDF Job Complete", `${jobId}: ${job.completed}/${job.totalStudents} (${job.errors.length} failed)`);
+    } else {
+      job.status = "PAUSED"; // pauses until UI calls again
+    }
+    job.updatedAt = new Date().toISOString();
+    _pdfSaveJob(job);
+    
+    const pct = job.totalStudents > 0 ? Math.round((job.completed / job.totalStudents) * 100) : 100;
+    return {
+      success: true,
+      jobId,
+      status: job.status,
+      completed: job.completed,
+      totalStudents: job.totalStudents,
+      remaining: job.totalStudents - job.completed,
+      percentage: pct,
+      folderUrl: job.folderUrl,
+      errors: job.errors,
+      processedThisChunk,
+      message: job.status === "COMPLETE"
+        ? `Job complete. ${job.completed} report cards generated${job.errors.length ? ', ' + job.errors.length + ' failed' : ''}.`
+        : `Processed ${processedThisChunk} this chunk. ${job.completed}/${job.totalStudents} (${pct}%) done. Click Continue to resume.`
+    };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+
+/**
+ * Get current status of a job (read-only, for polling/UI)
+ */
+function getPdfJobStatus(jobId) {
+  if (!isAdmin()) return { success: false, message: "Access denied." };
+  const job = _pdfLoadJob(jobId);
+  if (!job) return { success: false, message: "Job not found." };
+  const pct = job.totalStudents > 0 ? Math.round((job.completed / job.totalStudents) * 100) : 0;
+  return {
+    success: true,
+    jobId: job.jobId,
+    status: job.status,
+    classNum: job.classNum,
+    section: job.section,
+    examName: job.examName,
+    completed: job.completed,
+    totalStudents: job.totalStudents,
+    remaining: job.totalStudents - job.completed,
+    percentage: pct,
+    folderUrl: job.folderUrl,
+    errors: job.errors,
+    startedAt: job.startedAt,
+    updatedAt: job.updatedAt
+  };
+}
+
+
+/**
+ * Cancel and remove a job (does NOT delete already-generated PDFs in Drive)
+ */
+function cancelPdfJob(jobId) {
+  if (!isAdmin()) return { success: false, message: "Access denied." };
+  const job = _pdfLoadJob(jobId);
+  if (!job) return { success: false, message: "Job not found." };
+  _pdfDeleteJob(jobId);
+  try { writeAudit("PDF_JOB_CANCEL", "Reports", jobId, "status", job.status, "CANCELLED", { completed: job.completed, total: job.totalStudents }); } catch (e) {}
+  return { success: true, message: `Job cancelled. ${job.completed}/${job.totalStudents} files remain in Drive folder.`, folderUrl: job.folderUrl };
+}
+
+
+/**
+ * Cleanup helper: remove all completed jobs older than N days
+ */
+function cleanupOldPdfJobs(olderThanDays) {
+  if (!isAdmin()) return { success: false, message: "Access denied." };
+  const days = parseInt(olderThanDays) || 7;
+  const cutoff = Date.now() - days * 86400000;
+  const props = _pdfJobScope().getProperties();
+  let removed = 0;
+  Object.keys(props).forEach(k => {
+    if (k.indexOf(PDF_JOB_PREFIX) !== 0) return;
+    try {
+      const j = JSON.parse(props[k]);
+      if (j.status === "COMPLETE" && j.updatedAt && new Date(j.updatedAt).getTime() < cutoff) {
+        _pdfJobScope().deleteProperty(k);
+        removed++;
+      }
+    } catch (e) {}
+  });
+  return { success: true, message: `Removed ${removed} completed jobs older than ${days} day(s).` };
+}
+

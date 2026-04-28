@@ -2257,9 +2257,29 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
             </select>
           </div>
           <div class="filter-group" style="align-self: flex-end;">
-            <button class="btn btn-primary" onclick="generateClassReports()">Generate All PDFs</button>
+            <button class="btn btn-primary" onclick="startBatchedPDFGeneration()" data-testid="btn-start-pdf-batch">Generate All PDFs (Batched)</button>
           </div>
         </div>
+        
+        <!-- Batched PDF Job Progress -->
+        <div id="pdfJobProgress" style="margin-top: 20px; display: none;">
+          <div class="table-card">
+            <h4 style="margin: 0 0 12px;">Generation Progress</h4>
+            <div id="pdfJobInfo" style="font-size: 13px; color: #6b7280; margin-bottom: 12px;"></div>
+            <div style="background: #f3f4f6; border-radius: 999px; height: 14px; overflow: hidden; margin-bottom: 12px;">
+              <div id="pdfJobBar" style="background: linear-gradient(90deg, #10b981, #059669); height: 100%; width: 0%; transition: width 0.3s;" data-testid="pdf-progress-bar"></div>
+            </div>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <button class="btn btn-primary" id="pdfJobContinueBtn" onclick="continuePdfJob()" style="display:none;" data-testid="btn-pdf-continue">Continue</button>
+              <button class="btn btn-secondary" id="pdfJobOpenFolderBtn" onclick="openPdfFolder()" style="display:none;" data-testid="btn-pdf-open-folder">Open Drive Folder</button>
+              <button class="btn btn-secondary" onclick="cancelPdfJobUI()" data-testid="btn-pdf-cancel">Cancel Job</button>
+            </div>
+            <div id="pdfJobErrors" style="margin-top: 12px; font-size: 12px; color: #b91c1c;"></div>
+          </div>
+        </div>
+        
+        <!-- Resume previous job -->
+        <div id="pdfJobsResume" style="margin-top: 16px;"></div>
         
         <h4 style="margin: 24px 0 12px;">Or Generate Individual Report Card</h4>
         <div class="filters-bar" style="padding: 0; box-shadow: none;">
@@ -3158,7 +3178,8 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
         case 'weak-students': loadWeakStudentsFull(); break;
         case 'toppers': loadToppers(); break;
         case 'grade-ranges': loadGradeRanges(); break;
-        case 'report-cards': loadReportCardsPage(); break;
+        case 'report-cards': loadReportCardsPage(); renderResumeJobs(); break;
+        case 'class-report': loadReportCardsPage(); renderResumeJobs(); break;
         case 'bulk-students': break;
         case 'bulk-teachers': break;
         case 'bulk-marks': break;
@@ -4538,47 +4559,175 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
         .getStudents({ status: 'Active' });
     }
     
-    function generateClassReports() {
+    // ================== BATCHED PDF REPORT CARDS ==================
+    
+    let _pdfCurrentJobId = null;
+    let _pdfAutoContinue = false;
+    
+    function startBatchedPDFGeneration() {
       const classNum = document.getElementById('reportClass').value;
       const section = document.getElementById('reportSection').value;
       const examId = document.getElementById('reportExam').value;
       
-      if (!classNum) {
-        alert('Please select a class');
-        return;
-      }
+      if (!classNum) { alert('Please select a class'); return; }
+      if (!examId) { alert('Please select an exam'); return; }
       
-      const container = document.getElementById('reportCardResults');
-      container.innerHTML = '<div class="loading"><div class="spinner"></div><p style="margin-top: 12px;">Generating report cards... This may take a while.</p></div>';
+      if (!confirm(`Generate report cards for Class ${classNum}${section ? ' ' + section : ' (All sections)'} for the selected exam?`)) return;
+      
+      const progress = document.getElementById('pdfJobProgress');
+      const info = document.getElementById('pdfJobInfo');
+      progress.style.display = '';
+      info.innerHTML = 'Starting job...';
+      _setPdfBar(0);
+      _setPdfErrors([]);
       
       google.script.run
-        .withSuccessHandler(function(result) {
-          if (result.success) {
-            container.innerHTML = `
-              <div style="background: #dcfce7; padding: 16px; border-radius: 8px;">
-                <strong style="color: #15803d;">Report Cards Generated!</strong>
-                <p style="margin-top: 8px;">${result.message}</p>
-                <a href="${result.folderUrl}" target="_blank" class="btn btn-primary" style="margin-top: 12px; display: inline-block; text-decoration: none;">
-                  Open Folder in Google Drive
-                </a>
-                ${result.files.length > 0 ? `
-                  <details style="margin-top: 12px;">
-                    <summary style="cursor: pointer;">View Generated Files (${result.files.length})</summary>
-                    <ul style="margin-top: 8px; font-size: 12px;">
-                      ${result.files.map(f => `<li><a href="${f.url}" target="_blank">${f.fileName}</a></li>`).join('')}
-                    </ul>
-                  </details>
-                ` : ''}
-              </div>
-            `;
+        .withSuccessHandler(function(r) {
+          if (!r.success) {
+            info.innerHTML = `<span style="color:#b91c1c;">${r.message}</span>`;
+            return;
+          }
+          _pdfCurrentJobId = r.jobId;
+          _pdfAutoContinue = true;
+          info.innerHTML = `Job <code>${r.jobId}</code> — Class ${classNum}${section ? ' ' + section : ''} — ${r.totalStudents} students total. Processing...`;
+          continuePdfJob();
+        })
+        .withFailureHandler(function(err) { info.innerHTML = `<span style="color:#b91c1c;">${(err && err.message) || err}</span>`; })
+        .startBatchedReportCardGeneration(classNum, section, examId, 25);
+    }
+    
+    function continuePdfJob() {
+      if (!_pdfCurrentJobId) { alert('No active job. Click "Generate All PDFs (Batched)" to start one.'); return; }
+      const info = document.getElementById('pdfJobInfo');
+      const continueBtn = document.getElementById('pdfJobContinueBtn');
+      const folderBtn = document.getElementById('pdfJobOpenFolderBtn');
+      continueBtn.style.display = 'none';
+      
+      google.script.run
+        .withSuccessHandler(function(r) {
+          if (!r.success) {
+            info.innerHTML += `<br><span style="color:#b91c1c;">${r.message}</span>`;
+            continueBtn.style.display = '';
+            return;
+          }
+          _setPdfBar(r.percentage);
+          info.innerHTML = `<strong>${r.completed}/${r.totalStudents}</strong> done (${r.percentage}%) — ${r.remaining} remaining. Status: <strong>${r.status}</strong>.`;
+          _setPdfErrors(r.errors || []);
+          
+          if (r.status === 'COMPLETE') {
+            info.innerHTML = `<span style="color:#15803d;"><strong>Complete!</strong> ${r.completed} report cards generated. ${r.errors.length ? r.errors.length + ' failed.' : ''}</span>`;
+            folderBtn.style.display = '';
+            folderBtn.dataset.url = r.folderUrl;
+            _pdfAutoContinue = false;
+            renderResumeJobs();
+          } else if (_pdfAutoContinue) {
+            // Auto-continue while user stays on page
+            setTimeout(continuePdfJob, 600);
           } else {
-            container.innerHTML = `<p style="color: var(--danger);">${result.message}</p>`;
+            continueBtn.style.display = '';
           }
         })
-        .withFailureHandler(function(error) {
-          container.innerHTML = `<p style="color: var(--danger);">Error: ${error}</p>`;
+        .withFailureHandler(function(err) {
+          info.innerHTML += `<br><span style="color:#b91c1c;">${(err && err.message) || err}</span>`;
+          continueBtn.style.display = '';
         })
-        .generateClassReportCardsPDF(classNum, section, examId);
+        .processBatchedReportCardChunk(_pdfCurrentJobId);
+    }
+    
+    function cancelPdfJobUI() {
+      if (!_pdfCurrentJobId) return;
+      if (!confirm('Cancel this job? Already-generated PDFs in Drive will NOT be deleted.')) return;
+      _pdfAutoContinue = false;
+      google.script.run
+        .withSuccessHandler(function(r) {
+          alert(r.message || 'Cancelled.');
+          document.getElementById('pdfJobProgress').style.display = 'none';
+          _pdfCurrentJobId = null;
+          renderResumeJobs();
+        })
+        .cancelPdfJob(_pdfCurrentJobId);
+    }
+    
+    function openPdfFolder() {
+      const url = document.getElementById('pdfJobOpenFolderBtn').dataset.url;
+      if (url) window.open(url, '_blank');
+    }
+    
+    function _setPdfBar(pct) {
+      const bar = document.getElementById('pdfJobBar');
+      if (bar) bar.style.width = (pct || 0) + '%';
+    }
+    
+    function _setPdfErrors(errors) {
+      const box = document.getElementById('pdfJobErrors');
+      if (!box) return;
+      if (!errors || errors.length === 0) { box.innerHTML = ''; return; }
+      box.innerHTML = `
+        <details>
+          <summary style="cursor:pointer; color:#b91c1c;">${errors.length} failed entries</summary>
+          <ul style="margin-top:6px; padding-left:20px;">
+            ${errors.slice(0, 50).map(e => `<li>${e.name || e.studentId}: ${e.error}</li>`).join('')}
+          </ul>
+        </details>`;
+    }
+    
+    function renderResumeJobs() {
+      const container = document.getElementById('pdfJobsResume');
+      if (!container) return;
+      google.script.run
+        .withSuccessHandler(function(jobs) {
+          jobs = jobs || [];
+          const incomplete = jobs.filter(j => j.status !== 'COMPLETE');
+          const recent = jobs.slice(0, 5);
+          if (recent.length === 0) { container.innerHTML = ''; return; }
+          container.innerHTML = `
+            <h4 style="margin: 16px 0 8px;">Recent &amp; Resumable Jobs</h4>
+            <div class="table-card">
+              <table>
+                <thead>
+                  <tr><th>Job ID</th><th>Class</th><th>Exam</th><th>Progress</th><th>Status</th><th>Actions</th></tr>
+                </thead>
+                <tbody>
+                  ${recent.map(j => {
+                    const pct = j.totalStudents ? Math.round((j.completed / j.totalStudents) * 100) : 0;
+                    return `<tr>
+                      <td style="font-size:12px;"><code>${j.jobId}</code></td>
+                      <td>Class ${j.classNum}${j.section ? ' ' + j.section : ''}</td>
+                      <td>${j.examName || '-'}</td>
+                      <td>${j.completed}/${j.totalStudents} (${pct}%)</td>
+                      <td>${j.status}</td>
+                      <td>
+                        ${j.status !== 'COMPLETE' ? `<button class="btn btn-sm btn-primary" onclick="resumeJob('${j.jobId}')" data-testid="resume-job-${j.jobId}">Resume</button>` : ''}
+                        ${j.folderUrl ? `<a class="btn btn-sm" target="_blank" href="${j.folderUrl}">Folder</a>` : ''}
+                        <button class="btn btn-sm" onclick="dismissJob('${j.jobId}')">Dismiss</button>
+                      </td>
+                    </tr>`;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>`;
+        })
+        .listPdfJobs();
+    }
+    
+    function resumeJob(jobId) {
+      _pdfCurrentJobId = jobId;
+      _pdfAutoContinue = true;
+      document.getElementById('pdfJobProgress').style.display = '';
+      document.getElementById('pdfJobInfo').innerHTML = `Resuming job <code>${jobId}</code>...`;
+      continuePdfJob();
+    }
+    
+    function dismissJob(jobId) {
+      if (!confirm('Remove this job from the list? Files in Drive remain untouched.')) return;
+      google.script.run
+        .withSuccessHandler(function() { renderResumeJobs(); })
+        .cancelPdfJob(jobId);
+    }
+    
+    // Legacy single-shot function (still works for small classes if user prefers, but batched is the recommended path)
+    function generateClassReports() {
+      startBatchedPDFGeneration();
     }
     
     function generateSingleReport() {
