@@ -1,194 +1,155 @@
 <analysis>**original_problem_statement:**
-The user is building a full-fledged MVM Report Tracker application using Google Apps Script (GAS) with a Google Sheets database and an HTML dashboard. The system handles role-based access for Admins and Teachers, student records, bulk uploads, marks entry, report card generation, and analytics. Recently, the scope was expanded to eventually support 4,000 students and 200 teachers. However, the user has explicitly halted adding new features (like classes 6-10) until the current system is stabilized and optimized for scale.
+The user is building a massive single-school MVM Report Tracker application using Google Apps Script (GAS) with a Google Sheets database and an HTML dashboard. The system handles role-based access, student records, bulk uploads, marks entry, batched PDF report card generation, and analytics for up to 4,000 students and 200 teachers. The user recently mandated a massive system stabilization (LockService, duplicate protections, server-side pagination), followed by an architectural hardening phase (Email+Password Auth, Soft Deletes, Year Freeze, Audit Trail, and Batched PDF generation). 
 
 **PRODUCT REQUIREMENTS:**
-1. Custom HTML email-based login (no Google OAuth required).
-2. Class 11-12 sections (A1-A12) with stream-based and elective subjects.
-3. Admin dashboard for bulk uploading/syncing data and generating class-wise Google Sheets for teachers to fill.
-4. Export and template download features in CSV and Excel formats.
-5. System must be extremely stable, using  for concurrency, optimized sheet reads (caching over ), strict duplicate protections, and server-side pagination to handle 4,000 records without timing out.
+1. Secure Email + Password Authentication with session management (6-8 hour expiry).
+2. Soft Delete system with Trash & Restore UI.
+3. Academic Year Freeze to prevent edits after finalization.
+4. Strict duplicate protections and  for concurrency handling.
+5. Server-side pagination and optimized sheet reads for large datasets.
+6. Batched PDF generation with chunking and resume capabilities to bypass GAS execution limits.
+7. Status field for marks (PRESENT/ABSENT/EXEMPT) to ensure accurate analytics.
 
-**User's preferred language**: English (INSTRUCT next agent to respond in English)
+**User's preferred language**: English (INSTRUCT next agent to respond in English only).
 
 **what currently exists?** 
-A robust Google Apps Script single-page web app. It has a modern, gradient-heavy UI (SmartGenEduX). It uses a custom email-based login stored in  to bypass Google's execution identity limitations. It supports exams with internal marks, elective subjects, bulk uploads with templates, and PDF report cards. Currently, the agent is executing a strict 8-point system stabilization mandate requested by the user to prepare the app for 4,000 students.
+A highly hardened, 12,000+ line Google Apps Script web app spread across 7  backend files and 1 massive  frontend. It features custom salted password authentication, role-based backend enforcement (Admin/Teacher), soft deletes, full CRUD for Classes 6-12 (including elective mapping), an Audit Trail, and batched PDF generation.
 
 **Last working item**:
-- **Last item agent was working**: Implementing the 8-point stabilization mandate (specifically starting with  to add Duplicate Protection and ).
-- **Status**: IN PROGRESS
-- **Agent Testing Done**: N
-- **Which testing method agent to use?** manual testing by describing the steps to the user (Since it's a GAS project, automated subagents cannot interact with the Google Sheets cloud runtime).
+- **Last item agent was working**: The agent was investigating the codebase to answer the user's detailed 9-point questionnaire regarding the *existing* role system (Admin vs Teacher), data filtering mechanisms, Class Teacher logic, and the cleanest architectural path to introduce new Principal and Wing Admin roles without breaking existing logic.
+- **Status**: IN PROGRESS (Questionnaire answer pending)
+- **Agent Testing Done**: N/A (Analytical task)
+- **Which testing method agent to use?**: manual testing by curl/ python -c / screenshot tool or any other method (Specifically, manual code review and  since automated testing agents cannot execute Google Apps Script cloud runtime).
 - **User Testing Done**: N
 
 **All Pending/In progress Issue list**:
-*Note: The user explicitly requested NO NEW FEATURES until these 8 stabilization issues are resolved.*
+Issue 1: Answer User's Role System Questionnaire (P0)
+- **Attempted fixes**: Agent ran a bash  to locate , , and role derivations in  and  but has not yet formulated the response.
+- **Next debug checklist**: Formulate a direct, code-based response to the user's 9 questions from the last message. Explain that currently only  and  roles exist. Explain how  enforces scope on the backend. Detail that  exists in the schema but gives no extra access currently. Propose the cleanest path for Principal (full read, no write) and Wing Admin (class-range scoped read/write).
+- **Why fix this issue and what will be achieved with the fix?**: The user explicitly halted new architecture changes until they have clarity on the current state. Answering this unlocks the next phase of development.
+- **Status**: IN PROGRESS
+- **Is recurring issue?**: N
+- **Should Test frontend/backend/both after fix?**: N/A (Informational response)
 
-- **Issue 1**: Duplicate Protection for Marks (P0)
-  - **Attempted fixes**: None yet. Agent just started analyzing .
-  - **Next debug checklist**: Modify marks saving logic in . Check if record exists for . If yes -> UPDATE row. If no -> INSERT.
-  - **Why fix this issue and what will be achieved with the fix?**: Prevents data corruption and duplicate entries in the  sheet.
-  - **Status**: IN PROGRESS
-  - **Is recurring issue?**: N
-  - **Should Test frontend/backend/both after fix?**: backend (GAS logic)
-  - **Blocked on other issue**: None
-
-- **Issue 2**: Add LockService for Concurrency (P0)
-  - **Attempted fixes**: None.
-  - **Next debug checklist**: Wrap all write operations (, , student bulk upload, updates) with . Release lock in a  block.
-  - **Why fix this issue?**: Prevents data collision when 200 teachers save simultaneously.
-  - **Status**: NOT STARTED
-  - **Is recurring issue?**: N
-  - **Should Test frontend/backend/both after fix?**: backend
-
-- **Issue 3**: Optimize Sheet Reads (P0)
-  - **Attempted fixes**: None.
-  - **Next debug checklist**: Find all instances of  inside loops. Refactor to read the sheet once, convert to a Map/Object, and reuse data in memory.
-  - **Why fix this issue?**: GAS times out at 6 minutes; reducing read/write calls is mandatory for 4,000 records.
-  - **Status**: NOT STARTED
-  - **Is recurring issue?**: N
-  - **Should Test frontend/backend/both after fix?**: backend
-
-- **Issue 4**: Add Server-side Pagination (P0)
-  - **Attempted fixes**: None.
-  - **Next debug checklist**: Update  and marks listing functions to accept  and . Update  tables to handle pagination controls.
-  - **Why fix this issue?**: Loading 4,000 DOM elements at once will crash the browser.
-  - **Status**: NOT STARTED
-  - **Is recurring issue?**: N
-  - **Should Test frontend/backend/both after fix?**: both
-
-- **Issue 5**: Add Academic Year in Students Sheet (P0)
-  - **Attempted fixes**: None.
-  - **Next debug checklist**: Add  column to the  sheet structure in  and update read/write functions.
-  - **Why fix this issue?**: Required for the upcoming year-end archive feature.
-  - **Status**: NOT STARTED
-  - **Is recurring issue?**: N
-  - **Should Test frontend/backend/both after fix?**: backend
-
-- **Issue 6**: Subject Config System (P0)
-  - **Attempted fixes**: None.
-  - **Next debug checklist**: Move subject definitions entirely out of hardcoded arrays in  into the  sheet (class, stream, subject, language_group).
-  - **Why fix this issue?**: Allows admins to configure subjects without modifying code.
-  - **Status**: NOT STARTED
-  - **Is recurring issue?**: N
-  - **Should Test frontend/backend/both after fix?**: both
-
-- **Issue 7**: Basic Validation for Marks (P0)
-  - **Attempted fixes**: None.
-  - **Next debug checklist**: In , verify student exists, exam exists, and subject is valid for that student's class before saving.
-  - **Why fix this issue?**: Maintains referential integrity.
-  - **Status**: NOT STARTED
-  - **Is recurring issue?**: N
-  - **Should Test frontend/backend/both after fix?**: backend
+Issue 2: Normalize Teacher Assignment Data (P1)
+- **Attempted fixes**: This was requested in the 10-point structural upgrade (Message 268: Clean and normalize during save: Trim spaces, Standardize separators). It may have been overlooked during the massive schema and auth rewrite.
+- **Next debug checklist**: Check  and  where teacher data is saved. Ensure spaces are trimmed and separators (commas) are standardized for assigned classes/sections.
+- **Why fix this issue and what will be achieved with the fix?**: Prevents fragile parsing logic from breaking when determining a teacher's scope.
+- **Status**: NOT STARTED
+- **Is recurring issue?**: N
+- **Should Test frontend/backend/both after fix?**: backend
 
 **In progress Task List**:
-None. (All active work is captured in the Issue list above).
+Task 1: Plan Role-Based Dashboards (Principal & Wing Admin)
+- **Where to resume**: Pending user's green light *after* the questionnaire is answered.
+- **What will be achieved with this?**: Expands the system's RBAC capabilities for school management.
+- **Status**: BLOCKED (Waiting on Issue 1 resolution)
+- **Should Test frontend/backend/both after fix?**: both
+- **Blocked on something**: Issue 1 (Answering the questionnaire)
 
-**Upcoming and Future Tasks**
-- **Upcoming Tasks**:
-  - (P1) Add Classes 6-8 and 9-10 (Sections A, B, C, D) once stabilization is complete.
-  - (P1) Implement Year-End Archive & Reset system (Clear marks, keep structure, move to Archive Spreadsheet).
-- **Future Tasks**:
-  - (P2) Auto-promote students (e.g., 11 -> 12).
-  - (P2) Add Password security for teachers (currently using email-only validation).
+**Upcoming and Future Tasks**:
+Upcoming Tasks:
+- (P0) Implement Principal and Wing Admin roles/dashboards based on the agreed-upon extension path.
+- (P1) Background triggers for  (Time-driven trigger setup).
 
-**Completed work in this session**
--  UI Redesign with stunning gradients, shadows, and modern cards (DONE)
-- Developed by SmartGenEduX @ 2k26 footer added (DONE)
-- Custom email-based login UI leveraging  to bypass Google account identity sharing limitations (DONE)
-- Elective Subject System (Maths/Hindi/History/Sanskrit) tracking in Students schema (DONE)
-- Class-wise Sheets Generator (Admin feature to create and sync 11_A1 to 12_A12 individual sheets) (DONE)
-- Excel (, ) support in frontend upload format text + Download Template buttons for bulk uploads (DONE)
-- Exam internal marks configuration UI and backend logic (DONE)
-- Teacher Access logic fixed (Case-insensitive email checks, properly matching login session) (DONE)
+Future Tasks:
+- (P2) Auto-promote students (11 -> 12) automation logic.
+- (P2) Multi-year analytics (cross-referencing Archive sheets).
 
-**Earlier issues found/mentioned but not fixed**
-None that aren't captured in the P0 stabilization mandate.
+**Completed work in this session**:
+- Backend Stabilization (Duplicate protection, LockService, Optimize Reads) (DONE)
+- Server-side Pagination & Classes 6-10 support (DONE)
+- Year-End Archive & Reset system (DONE)
+- Email + Password Auth implementation & Session Management (DONE)
+- Soft Delete (isDeleted flag) & Trash UI with Restore logic (DONE)
+- Academic Year Freeze (isYearFinalized) (DONE)
+- Status field handling (PRESENT/ABSENT/EXEMPT) for analytics (DONE)
+- Audit Trail System () (DONE)
+- Batched PDF Report Generation with Chunking & Resume tracking (DONE)
 
-**Known issue recurrence from previous fork**
-- None.
+**Earlier issues found/mentioned but not fixed**:
+None.
 
-**Code Architecture**
+**Known issue recurrence from previous fork**:
+- Recurrence count: 0
+- Status: RESOLVED
+
+**Code Architecture**:
 
 
-**Key Technical Concepts**
+**Key Technical Concepts**:
 - **Google Apps Script (GAS)**: JavaScript cloud runtime attached to a Google Sheet.
-- **HtmlService**: Renders .
-- **PropertiesService**: Stores user login identity state locally per user execution ().
-- **No external DB**: The Google Sheet is the database. Schema is defined in .
+- **Google Sheets as DB**: No SQL/NoSQL DB used. Reads/writes are optimized via batch arrays.
+- **HtmlService**: Renders the 5000+ line .
+- **PropertiesService**: Stores user session tokens and PDF batch resume states.
+- **LockService**: Used extensively on write paths to prevent concurrency race conditions.
 
-**key DB schema**
-- : , , , , , , , , , , , *(Needs: AcademicYear)*
-- : , , , , , , , , , , , , , , , , , 
-- : , , , , , , , , , , , , , , , , , 
-- : , , , , , , , , 
+**key DB schema**:
+- : Email, PasswordHash, Salt, MustChangePassword, SessionToken, SessionExpiry, FailedAttempts, CreatedAt.
+- : StudentID, Name, Class, Section, Stream, RollNo, ... IsDeleted, AcademicYear.
+- : EntryID, StudentID, Subject, MarksObtained, ... Status (PRESENT/ABSENT/EXEMPT), IsDeleted, AcademicYear.
+- : ExamID, ExamName, Locked, ... IsDeleted, AcademicYear.
+- : Timestamp, Action, EntityType, EntityID, Field, OldValue, NewValue, ChangedBy.
 
-**changes in tech stack**
-- Transitioned entirely away from  for authentication due to Google permissions. It now uses a custom HTML login form that stores the provided email in .
+**changes in tech stack**:
+- Authentication migrated from simple email string matching to robust salted password hashes stored in an  sheet, utilizing  for session tokens.
 
-**All files of reference**
-- : (Updated extensively with new DB columns and )
+**All files of reference**:
 - 
-- : (Rewritten auth logic)
 - 
-- : (CURRENTLY WORKING FILE)
-- : (Massive UI file containing all CSS/JS/HTML)
+- 
+- 
+- 
+- 
+- 
+- 
+-  (Updated with new password testing data)
 
 **Areas that need refactoring**:
-- Data read patterns: Replacing  inside loops with one-time fetches and hash maps.
--  is extremely large (>4000 lines) but must be maintained as-is unless explicitly instructed otherwise, as it's standard for standalone GAS web apps.
+-  is ~5400 lines long. It cannot be easily split into separate HTML files due to standard GAS deployment limitations, so all frontend updates MUST rely on surgical .
 
-**key api endpoints**
-GAS  endpoints:
+**key api endpoints**:
+- Client calls backend via .
+
+**Critical Info for New Agent**:
+- **DO NOT USE NPM, REACT, PYTHON, OR UVICORN.** This is a pure Google Apps Script project.
+- Automated testing subagents (like ) **CANNOT BE USED** because they cannot interact with the Google Apps Script cloud runtime or Google Sheets API natively. All validations must be done via static analysis, code review, and  for syntax errors.
+- Do NOT jump into writing code for Principal/Wing Admin roles immediately. The user explicitly requested an informational explanation of the *current* role logic first.
+
+**documents and test reports created in this job**:
 - 
--  / 
 - 
 
-**Critical Info for New Agent**
-- **DO NOT USE NPM, REACT, PYTHON, OR UVICORN.** This is entirely Google Apps Script. 
-- **DO NOT START ANY NEW FEATURES.** The user was absolutely clear: Do NOT add Classes 6-10 yet. Focus strictly on the 8 stabilization points (Duplicate Protection, LockService, Optmized Reads, Pagination, AcademicYear, Keep Marks_Master, Subject Config DB, Basic Validation).
-- To interact with Google Sheets locally for manual simulation, remember you are mocking logic in  files.
-
-**documents and test reports created in this job**
--  (Updated in-session with new specs)
-
-**Last 10 User Messages and any pending HUMAN messages**
-1. User: Wants class-wise data entry sheets generated from the app instead of CSV uploads.
-2. Agent: Implements Manage Data Sheets to create sheets like  and sync them back to the master DB.
-3. User: Asks how to share sheets securely without exposing code.
-4. Agent: Explains standard Google Sheet sharing; code is hidden in Extensions > Apps Script.
-5. User: Asks if filling Teachers_Master sheet is enough for login.
-6. Agent: Explains they must click Sync Teachers button in Dashboard first.
-7. User: Asks for an honest assessment of system flaws.
-8. Agent: Highlights critical issues: No real security, Excel parsing needs library, Single Marks_Master sheet will hit limits, no LockService, missing 6-10 classes.
-9. User: States they want to scale to 4,000 students and 200 teachers. Asks for the full plan and if this is a SaaS.
-10. Agent: Clarifies it's a GAS app owned by the user. Lays out a 5-phase plan to scale and add classes 6-10.
-11. User: **We are NOT adding new classes yet. First we stabilize the system.** Provides a strict 8-point checklist (Duplicate protection, LockService, Optimization, Pagination, etc.).
-12. Agent: Acknowledges the strict mandate and starts reviewing . (Pending completion of these 8 items).
+**Last 10 User Messages and any pending HUMAN messages**:
+1. User: Requests PDF Report Generation upgrade (batched, chunking, progress tracking).
+2. Agent: Implements batched PDF generation in  and UI.
+3. User: Asks Can I save to GitHub and check?
+4. Agent: Verifies all code is clean and confirms user can save to GitHub.
+5. User: **(PENDING MESSAGE)** Posts a detailed 9-point questionnaire asking for clarity on the *existing* role system, where roles are stored, how data filtering works, if Class Teacher logic is used, and what the cleanest extension path is for adding Principal and Wing Admin roles without breaking existing logic. Instructs the agent to answer based *only* on actual code.
 
 **Project Health Check:**
-- Broken:  loops causing performance issues for large datasets. Lack of  making concurrency unsafe. (Currently being fixed).
-- Mocked: None. 
+- Broken: None
+- Mocked: None
 
-**3rd Party Integrations**
-- None. (Runs entirely natively on Google Workspace).
+**3rd Party Integrations**:
+- None. (Native Google Workspace).
 
-**Testing status**
-- Testing agent used after significant changes: NO (GAS environment incompatible with standard automated testers)
+**Testing status**:
+- Testing agent used after significant changes: NO (GAS environment incompatible)
 - Troubleshoot agent used after agent stuck in loop: NO
 - Test files created: None
 - Known regressions: None
 
-**Credentials to test flow:**
-Admin Login: , , 
-*(Type into the custom dashboard HTML login screen)*
+**Credentials to test flow**:
+- Refer to  for updated Admin and Teacher accounts with passwords.
 
-**What agent forgot to execute**
-- The agent was interrupted immediately after acknowledging the user's massive 8-point stabilization mandate. The new agent must start executing these 8 steps sequentially.
+**What agent forgot to execute**:
+- The agent ran a grep command to analyze the roles codebase but did not formulate or send the response to the user's 9-point questionnaire. This MUST be your first action.
 
 **Debugging checklist for current issue**
-    Issue: Duplicate Protection & LockService implementation (Points 1 & 2 of User Mandate)
+    Issue: Pending 9-point Role System Questionnaire
     Backend files to check: 
-    - Add  to  and .
-    - Retrieve all existing marks into a map:  with key .
-    - Check incoming marks against map. If exists -> calculate row number and update. If not -> append.
-    - Wrap in .</analysis>
+    -  (Check , , session roles)
+    -  (Check schema for , )
+    -  (Check  to see how  limits scope)
+    Action: Write a clear, concise, code-backed response addressing every single point in the user's last message.</analysis>
