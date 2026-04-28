@@ -80,15 +80,18 @@ function checkUserAccess() {
     };
   }
   
-  // Check if admin
-  if (ADMIN_EMAIL_LIST.includes(email)) {
-    return { registered: true, role: "admin", message: "Welcome, Admin!" };
-  }
-  
-  // Check if teacher exists in Teachers sheet
-  const teacher = getTeacherByEmail(email);
-  if (teacher) {
-    return { registered: true, role: "teacher", message: `Welcome, ${teacher.name}!` };
+  const role = getRole(email);
+  if (role) {
+    let displayName = email.split("@")[0];
+    if (role !== "admin") {
+      const t = getTeacherByEmail(email);
+      if (t && t.name) displayName = t.name;
+    }
+    const roleLabel = role === "admin"      ? "Admin"
+                    : role === "principal"  ? "Principal"
+                    : role === "wing_admin" ? "Wing Admin"
+                    : "Teacher";
+    return { registered: true, role: role, message: `Welcome, ${displayName}! (${roleLabel})` };
   }
   
   // Not registered
@@ -123,14 +126,8 @@ function verifyUserEmail(email) {
   }
   email = email.trim().toLowerCase();
   
-  // Determine role first
-  let role = null;
-  if (ADMIN_EMAIL_LIST.map(e => e.toLowerCase()).includes(email)) {
-    role = "admin";
-  } else {
-    const teacher = getTeacherByEmail(email);
-    if (teacher) role = "teacher";
-  }
+  // Determine role first (supports all roles via Teachers sheet)
+  const role = getRole(email);
   if (!role) {
     return {
       registered: false, role: null, requiresPasswordSetup: false,
@@ -172,11 +169,8 @@ function setUserPassword(email, newPassword, oldPassword) {
   }
   email = email.trim().toLowerCase();
   
-  // Confirm user is registered
-  const adminEmails = ADMIN_EMAIL_LIST.map(e => e.toLowerCase());
-  let role = null;
-  if (adminEmails.includes(email)) role = "admin";
-  else if (getTeacherByEmail(email)) role = "teacher";
+  // Confirm user is registered (any role)
+  const role = getRole(email);
   if (!role) {
     return { success: false, message: "Email not registered." };
   }
@@ -280,13 +274,8 @@ function loginWithPassword(email, password) {
       return { success: false, message: `Invalid password. ${5 - newFailedCount} attempts remaining.` };
     }
     
-    // Determine role (must still be valid — admin list or active teacher)
-    let role = null;
-    if (ADMIN_EMAIL_LIST.map(e => e.toLowerCase()).includes(email)) role = "admin";
-    else {
-      const teacher = getTeacherByEmail(email);
-      if (teacher) role = "teacher";
-    }
+    // Determine role (must still be valid — admin list or active teacher with a role)
+    const role = getRole(email);
     if (!role) {
       writeAudit("LOGIN_FAIL", "Auth", email, "", "", "", { reason: "user no longer registered" });
       return { success: false, message: "Your account is no longer active. Contact admin." };
@@ -305,7 +294,7 @@ function loginWithPassword(email, password) {
     setLoggedInUser(email);
     PropertiesService.getUserProperties().setProperty('sessionToken', sessionToken);
     
-    const teacher = role === "teacher" ? getTeacherByEmail(email) : null;
+    const teacher = (role !== "admin") ? getTeacherByEmail(email) : null;
     const name = teacher ? teacher.name : email.split("@")[0];
     
     logAction("Login", `${role} login: ${email}`);
@@ -341,8 +330,7 @@ function validateSession(sessionToken) {
       const expiry = data[i][5] ? new Date(data[i][5]) : null;
       if (!expiry || expiry.getTime() < Date.now()) return null;
       const email = String(data[i][0]).toLowerCase();
-      const role = ADMIN_EMAIL_LIST.map(e => e.toLowerCase()).includes(email) ? "admin"
-                 : getTeacherByEmail(email) ? "teacher" : null;
+      const role = getRole(email);
       if (!role) return null;
       setLoggedInUser(email);
       return { email, role, sessionExpiry: expiry.toISOString() };
@@ -444,20 +432,20 @@ function verifyUserEmailLegacy(email) {
  * @returns {boolean} True if admin
  */
 function isAdmin(email) {
-  // If email provided, check it directly
+  // If email provided, check directly via getRole (supports both ADMIN_EMAIL_LIST and Role column)
   if (email) {
-    return ADMIN_EMAIL_LIST.map(e => e.toLowerCase()).includes(email.toLowerCase());
+    return getRole(email) === "admin";
   }
   
   // Try session first
   const sessionEmail = getCurrentUser();
-  if (sessionEmail && ADMIN_EMAIL_LIST.map(e => e.toLowerCase()).includes(sessionEmail.toLowerCase())) {
+  if (sessionEmail && getRole(sessionEmail) === "admin") {
     return true;
   }
   
   // Check stored login email from PropertiesService
   const storedEmail = PropertiesService.getUserProperties().getProperty('loggedInEmail');
-  if (storedEmail && ADMIN_EMAIL_LIST.map(e => e.toLowerCase()).includes(storedEmail.toLowerCase())) {
+  if (storedEmail && getRole(storedEmail) === "admin") {
     return true;
   }
   
@@ -552,10 +540,15 @@ function getTeacherByEmail(email) {
   const row = data.find(r => {
     const teacherEmail = (r[5] || '').toString().trim().toLowerCase();
     const status = (r[8] || '').toString().trim();
-    return teacherEmail === emailLower && status === "Active";
+    const isDeleted = (r[11] || '').toString().toLowerCase() === 'true';
+    return teacherEmail === emailLower && status === "Active" && !isDeleted;
   });
   
   if (!row) return null;
+  
+  // Role column (index 12) — default to "TEACHER" if missing/empty (backward compat)
+  const rawRole = (row[12] || '').toString().trim().toUpperCase();
+  const role = rawRole || "TEACHER";
   
   return {
     teacherId: row[0],
@@ -566,7 +559,10 @@ function getTeacherByEmail(email) {
     email: row[5],
     phone: row[6],
     joinDate: row[7],
-    status: row[8]
+    status: row[8],
+    isClassTeacher: row[9],
+    classTeacherOf: row[10],
+    role: role
   };
 }
 
@@ -583,21 +579,23 @@ function getTeacherAssignment(email) {
   
   if (!teacher) return null;
   
-  // Parse comma/semicolon-separated values into arrays
+  // Parse comma/semicolon-separated values into arrays (also handle spaces and pipes)
   const classesRaw = String(teacher.classes || "");
   const sectionsRaw = String(teacher.sections || "");
   
-  // Handle both comma and semicolon separators
-  const classesSplit = classesRaw.includes(";") ? classesRaw.split(";") : classesRaw.split(",");
-  const sectionsSplit = sectionsRaw.includes(";") ? sectionsRaw.split(";") : sectionsRaw.split(",");
+  // Standardize separators — accept comma, semicolon, pipe; trim each token
+  const splitNorm = (s) => s.split(/[,;|]/).map(x => x.trim()).filter(x => x);
+  const classesSplit = splitNorm(classesRaw);
+  const sectionsSplit = splitNorm(sectionsRaw);
   
   return {
     teacherId: teacher.teacherId,
     name: teacher.name,
     email: teacher.email,
     subject: teacher.subject,
-    classes: classesSplit.map(c => c.trim()).filter(c => c),
-    sections: sectionsSplit.map(s => s.trim()).filter(s => s),
+    role: teacher.role,
+    classes: classesSplit,
+    sections: sectionsSplit,
     hasAllClasses: classesRaw.toLowerCase().includes("all"),
     hasAllSections: sectionsRaw.toLowerCase().includes("all")
   };
@@ -605,54 +603,295 @@ function getTeacherAssignment(email) {
 
 
 /**
- * Apply teacher filter to data array
- * @param {Array} data - Array of objects to filter
- * @param {Object} options - Filter options { filterBySubject: boolean, subjectField: string }
- * @returns {Array} Filtered data
+ * Get the role of a user (admin/principal/wing_admin/teacher/null)
+ * Single source of truth for role determination.
+ *
+ * Resolution order:
+ *   1. Hard-coded ADMIN_EMAIL_LIST → 'admin' (super-admin / script owner safety)
+ *   2. Teachers sheet → uses Role column (col 13). Empty = 'teacher' (backward compat)
+ *
+ * @param {string} email - Optional email; falls back to current/stored user
+ * @returns {string|null} 'admin' | 'principal' | 'wing_admin' | 'teacher' | null
  */
-function applyTeacherFilter(data, options) {
-  // Admin sees everything
-  if (isAdmin()) {
-    return data;
+function getRole(email) {
+  const e = (email || getActualUserEmail() || "").toString().trim().toLowerCase();
+  if (!e) return null;
+  
+  // Super-admin via constant (cannot be locked out)
+  if (ADMIN_EMAIL_LIST.map(x => x.toLowerCase()).includes(e)) return "admin";
+  
+  // Lookup in Teachers sheet (single source of truth for non-super-admin roles)
+  const teacher = getTeacherByEmail(e);
+  if (!teacher) return null;
+  
+  switch ((teacher.role || "TEACHER").toUpperCase()) {
+    case "ADMIN":      return "admin";
+    case "PRINCIPAL":  return "principal";
+    case "WING_ADMIN":
+    case "WINGADMIN":  return "wing_admin";
+    case "TEACHER":
+    default:           return "teacher";
+  }
+}
+
+
+/**
+ * Check if current/given user is a Principal (full read, no write).
+ * @param {string} email - Optional email
+ * @returns {boolean}
+ */
+function isPrincipal(email) {
+  return getRole(email) === "principal";
+}
+
+
+/**
+ * Check if current/given user is a Wing Admin (admin powers within wing scope).
+ * @param {string} email - Optional email
+ * @returns {boolean}
+ */
+function isWingAdmin(email) {
+  return getRole(email) === "wing_admin";
+}
+
+
+/**
+ * Check whether the user can perform a write action.
+ * Roles:
+ *   - admin       → all writes
+ *   - wing_admin  → all writes within their wing (caller must additionally validate scope)
+ *   - teacher     → only marks entry within assignment (caller validates scope)
+ *   - principal   → no writes (read-only)
+ *
+ * @param {string} action - Optional action key: 'students' | 'marks' | 'exams' | 'reports' | 'settings'
+ * @param {string} email - Optional email
+ * @returns {boolean}
+ */
+function canWrite(action, email) {
+  const role = getRole(email);
+  if (!role) return false;
+  if (role === "admin") return true;
+  if (role === "principal") return false;
+  
+  if (role === "wing_admin") {
+    // Wing admins can do all standard writes (admin's responsibilities) within scope.
+    // System-wide settings (school config, year freeze, archive, grade ranges) remain
+    // admin-only — those endpoints continue using isAdmin() directly.
+    return action === "students" || action === "marks" ||
+           action === "exams" || action === "reports";
   }
   
-  const assignment = getTeacherAssignment();
-  if (!assignment) {
-    return []; // No assignment = no access
+  if (role === "teacher") {
+    // Teachers can only enter marks (existing behavior).
+    return action === "marks";
   }
   
+  return false;
+}
+
+
+/**
+ * Check whether the user can read data. Anyone with a valid role can read;
+ * scope is enforced separately by applyScopeFilter().
+ * @param {string} email - Optional email
+ * @returns {boolean}
+ */
+function canRead(email) {
+  return getRole(email) !== null;
+}
+
+
+/**
+ * Wing configuration helpers
+ * Wings are configured in Settings_School: Wing_Primary, Wing_Secondary, Wing_Senior.
+ * Defaults: Primary=6,7,8 | Secondary=9,10 | Senior=11,12.
+ */
+function _readWingConfig() {
+  const cache = _readWingConfig._cache;
+  if (cache && (Date.now() - cache.t) < 60000) return cache.v; // 60s cache
+  
+  const defaults = {
+    PRIMARY: ["6", "7", "8"],
+    SECONDARY: ["9", "10"],
+    SENIOR: ["11", "12"]
+  };
+  
+  try {
+    const sheet = SpreadsheetApp.getActive().getSheetByName("Settings_School");
+    if (!sheet) return defaults;
+    const data = sheet.getDataRange().getValues();
+    const map = {};
+    data.forEach(r => { if (r[0]) map[String(r[0])] = String(r[1] || ""); });
+    
+    const parse = (s, fallback) => {
+      const arr = String(s || "").split(/[,;|]/).map(x => x.trim()).filter(x => x);
+      return arr.length ? arr : fallback;
+    };
+    
+    const cfg = {
+      PRIMARY:   parse(map["Wing_Primary"],   defaults.PRIMARY),
+      SECONDARY: parse(map["Wing_Secondary"], defaults.SECONDARY),
+      SENIOR:    parse(map["Wing_Senior"],    defaults.SENIOR)
+    };
+    _readWingConfig._cache = { t: Date.now(), v: cfg };
+    return cfg;
+  } catch (e) {
+    return defaults;
+  }
+}
+
+
+/**
+ * Get wing name (PRIMARY/SECONDARY/SENIOR) for a given class.
+ * @param {string|number} cls
+ * @returns {string|null}
+ */
+function getWingForClass(cls) {
+  const c = String(cls || "").trim();
+  if (!c) return null;
+  const cfg = _readWingConfig();
+  if (cfg.PRIMARY.includes(c))   return "PRIMARY";
+  if (cfg.SECONDARY.includes(c)) return "SECONDARY";
+  if (cfg.SENIOR.includes(c))    return "SENIOR";
+  return null;
+}
+
+
+/**
+ * Get all class numbers belonging to a given wing.
+ * @param {string} wingName - PRIMARY | SECONDARY | SENIOR
+ * @returns {Array<string>}
+ */
+function getClassesForWing(wingName) {
+  const cfg = _readWingConfig();
+  return cfg[String(wingName || "").toUpperCase()] || [];
+}
+
+
+/**
+ * Resolve the class scope for a Wing Admin user.
+ *
+ * Two configuration modes (auto-detected, in order):
+ *   1. Their `Classes` column in Teachers sheet contains explicit class numbers
+ *      (e.g. "9,10") — used as-is.
+ *   2. Their `Classes` column contains a wing name (e.g. "PRIMARY", "SENIOR",
+ *      "Wing_Senior") — expanded via getClassesForWing().
+ *   3. Empty → empty scope (no access).
+ *
+ * @param {string} email
+ * @returns {Object|null} { classes:[], wing:string|null }
+ */
+function getWingAdminAssignment(email) {
+  const t = getTeacherByEmail(email || getActualUserEmail());
+  if (!t) return null;
+  
+  const raw = String(t.classes || "").trim();
+  if (!raw) return { classes: [], wing: null };
+  
+  const tokens = raw.split(/[,;|]/).map(x => x.trim()).filter(x => x);
+  
+  // If any token matches a wing name, expand it
+  const wingNames = ["PRIMARY", "SECONDARY", "SENIOR",
+                     "WING_PRIMARY", "WING_SECONDARY", "WING_SENIOR"];
+  let classes = [];
+  let firstWing = null;
+  tokens.forEach(tok => {
+    const upper = tok.toUpperCase();
+    if (wingNames.includes(upper)) {
+      const w = upper.replace("WING_", "");
+      classes = classes.concat(getClassesForWing(w));
+      if (!firstWing) firstWing = w;
+    } else {
+      classes.push(tok);
+    }
+  });
+  
+  // Dedupe
+  classes = Array.from(new Set(classes));
+  
+  // If no explicit wing name was used but all classes happen to live in one wing, infer it
+  if (!firstWing && classes.length) {
+    const wings = Array.from(new Set(classes.map(c => getWingForClass(c)).filter(w => w)));
+    if (wings.length === 1) firstWing = wings[0];
+  }
+  
+  return { classes: classes, wing: firstWing };
+}
+
+
+/**
+ * Apply role-based scope filter to data array.
+ *
+ * Rules:
+ *   - admin       → returns full data
+ *   - principal   → returns full data (read-only enforced by canWrite, not here)
+ *   - wing_admin  → filters by wing class list
+ *   - teacher     → existing assignment filter (class + section + optional subject)
+ *   - unknown     → returns []
+ *
+ * @param {Array} data - Array of objects with .class/.section/.subject (or Class/Section)
+ * @param {Object} options - { filterBySubject:boolean, subjectField:string }
+ * @returns {Array}
+ */
+function applyScopeFilter(data, options) {
+  const role = getRole();
   const opts = options || {};
   const filterBySubject = opts.filterBySubject || false;
   const subjectField = opts.subjectField || "subject";
   
-  return data.filter(item => {
-    // Check class assignment
-    const itemClass = String(item.class || item.Class || "");
-    const classMatch = assignment.hasAllClasses || 
-                       assignment.classes.includes(itemClass) ||
-                       assignment.classes.some(c => itemClass.includes(c));
+  // Admin & Principal: full read access
+  if (role === "admin" || role === "principal") {
+    return data;
+  }
+  
+  if (role === "wing_admin") {
+    const wa = getWingAdminAssignment();
+    if (!wa || !wa.classes.length) return [];
+    const allowedClasses = wa.classes.map(String);
+    return data.filter(item => {
+      const itemClass = String(item.class || item.Class || "");
+      return allowedClasses.includes(itemClass);
+    });
+  }
+  
+  if (role === "teacher") {
+    const assignment = getTeacherAssignment();
+    if (!assignment) return [];
     
-    if (!classMatch) return false;
-    
-    // Check section assignment
-    const itemSection = String(item.section || item.Section || "");
-    const sectionMatch = assignment.hasAllSections || 
-                         assignment.sections.includes(itemSection) ||
-                         itemSection === "";
-    
-    if (!sectionMatch) return false;
-    
-    // Check subject if required
-    if (filterBySubject) {
-      const itemSubject = String(item[subjectField] || "");
-      const subjectMatch = assignment.subject === "All" || 
-                           assignment.subject === itemSubject ||
-                           itemSubject === "";
-      if (!subjectMatch) return false;
-    }
-    
-    return true;
-  });
+    return data.filter(item => {
+      const itemClass = String(item.class || item.Class || "");
+      const classMatch = assignment.hasAllClasses ||
+                         assignment.classes.includes(itemClass) ||
+                         assignment.classes.some(c => itemClass.includes(c));
+      if (!classMatch) return false;
+      
+      const itemSection = String(item.section || item.Section || "");
+      const sectionMatch = assignment.hasAllSections ||
+                           assignment.sections.includes(itemSection) ||
+                           itemSection === "";
+      if (!sectionMatch) return false;
+      
+      if (filterBySubject) {
+        const itemSubject = String(item[subjectField] || "");
+        const subjectMatch = assignment.subject === "All" ||
+                             assignment.subject === itemSubject ||
+                             itemSubject === "";
+        if (!subjectMatch) return false;
+      }
+      return true;
+    });
+  }
+  
+  return [];
+}
+
+
+/**
+ * Backward-compat alias. New code should use applyScopeFilter().
+ * @deprecated Use applyScopeFilter
+ */
+function applyTeacherFilter(data, options) {
+  return applyScopeFilter(data, options);
 }
 
 
@@ -675,20 +914,70 @@ function getCurrentUserInfo() {
     };
   }
   
-  if (access.role === "admin") {
+  return _buildUserInfo(email, access.role);
+}
+
+
+/**
+ * Build a normalized user-info object for any role.
+ * @private
+ */
+function _buildUserInfo(email, role) {
+  email = (email || "").toLowerCase();
+  const teacher = (role !== "admin") ? getTeacherByEmail(email) : null;
+  const name = teacher ? teacher.name : (email ? email.split("@")[0] : "Unknown");
+  
+  if (role === "admin") {
     return {
       type: "admin",
       role: "admin",
       email: email,
-      name: email.split("@")[0],
+      name: name,
       permissions: ["all"],
       canManageMasterData: true,
       canLockExams: true,
       canViewAllData: true,
+      readOnly: false,
       hasAccess: true
     };
   }
   
+  if (role === "principal") {
+    return {
+      type: "principal",
+      role: "principal",
+      email: email,
+      name: name,
+      teacherId: teacher ? teacher.teacherId : null,
+      permissions: ["view_all", "view_analytics", "view_reports", "view_audit"],
+      canManageMasterData: false,
+      canLockExams: false,
+      canViewAllData: true,
+      readOnly: true,
+      hasAccess: true
+    };
+  }
+  
+  if (role === "wing_admin") {
+    const wa = getWingAdminAssignment(email);
+    return {
+      type: "wing_admin",
+      role: "wing_admin",
+      email: email,
+      name: name,
+      teacherId: teacher ? teacher.teacherId : null,
+      wing: wa ? wa.wing : null,
+      classes: wa ? wa.classes : [],
+      permissions: ["manage_wing", "enter_marks", "view_students", "manage_exams", "generate_reports"],
+      canManageMasterData: true, // within wing
+      canLockExams: false,       // remains admin-only
+      canViewAllData: false,
+      readOnly: false,
+      hasAccess: true
+    };
+  }
+  
+  // teacher (default)
   const assignment = getTeacherAssignment(email);
   if (assignment) {
     return {
@@ -704,6 +993,7 @@ function getCurrentUserInfo() {
       canManageMasterData: false,
       canLockExams: false,
       canViewAllData: false,
+      readOnly: false,
       hasAccess: true
     };
   }
@@ -712,7 +1002,7 @@ function getCurrentUserInfo() {
     type: "unauthorized",
     role: "unauthorized",
     email: email,
-    name: email ? email.split("@")[0] : "Unknown",
+    name: name,
     message: "Access Denied",
     hasAccess: false
   };
@@ -737,52 +1027,18 @@ function getUserInfoByEmail(email) {
   }
   
   email = email.trim().toLowerCase();
-  
-  // Check if admin
-  const adminEmails = ADMIN_EMAIL_LIST.map(e => e.toLowerCase());
-  if (adminEmails.includes(email)) {
+  const role = getRole(email);
+  if (!role) {
     return {
-      type: "admin",
-      role: "admin",
+      type: "unauthorized",
+      role: "unauthorized",
       email: email,
       name: email.split("@")[0],
-      permissions: ["all"],
-      canManageMasterData: true,
-      canLockExams: true,
-      canViewAllData: true,
-      hasAccess: true
+      message: "Access Denied - Email not registered",
+      hasAccess: false
     };
   }
-  
-  // Check if teacher
-  const teacher = getTeacherByEmail(email);
-  if (teacher) {
-    const assignment = getTeacherAssignment(email);
-    return {
-      type: "teacher",
-      role: "teacher",
-      email: email,
-      name: teacher.name || email.split("@")[0],
-      teacherId: assignment ? assignment.teacherId : null,
-      subject: assignment ? assignment.subject : null,
-      classes: assignment ? assignment.classes : [],
-      sections: assignment ? assignment.sections : [],
-      permissions: ["view_own_data", "enter_marks", "view_students"],
-      canManageMasterData: false,
-      canLockExams: false,
-      canViewAllData: false,
-      hasAccess: true
-    };
-  }
-  
-  return {
-    type: "unauthorized",
-    role: "unauthorized",
-    email: email,
-    name: email.split("@")[0],
-    message: "Access Denied - Email not registered",
-    hasAccess: false
-  };
+  return _buildUserInfo(email, role);
 }
 
 
@@ -808,15 +1064,23 @@ function hasPermission(permission) {
  * @returns {boolean} True if can access
  */
 function canAccessClass(classNum, section) {
-  if (isAdmin()) return true;
+  const role = getRole();
+  if (role === "admin" || role === "principal") return true;
   
-  const assignment = getTeacherAssignment();
-  if (!assignment) return false;
+  if (role === "wing_admin") {
+    const wa = getWingAdminAssignment();
+    return wa && wa.classes.map(String).includes(String(classNum));
+  }
   
-  const classMatch = assignment.hasAllClasses || assignment.classes.includes(String(classNum));
-  const sectionMatch = assignment.hasAllSections || assignment.sections.includes(section);
+  if (role === "teacher") {
+    const assignment = getTeacherAssignment();
+    if (!assignment) return false;
+    const classMatch = assignment.hasAllClasses || assignment.classes.includes(String(classNum));
+    const sectionMatch = assignment.hasAllSections || assignment.sections.includes(section);
+    return classMatch && sectionMatch;
+  }
   
-  return classMatch && sectionMatch;
+  return false;
 }
 
 
@@ -826,23 +1090,23 @@ function canAccessClass(classNum, section) {
  * @returns {boolean} True if can edit
  */
 function canEditSubject(subject) {
-  if (isAdmin()) return true;
+  const role = getRole();
+  if (role === "admin" || role === "wing_admin") return true;
+  if (role === "principal") return false;
   
   const assignment = getTeacherAssignment();
   if (!assignment) return false;
-  
   return assignment.subject === "All" || assignment.subject === subject;
 }
 
 
 /**
- * Validate teacher can access specific student
+ * Validate user can access specific student (by class/section)
  * @param {Object} student - Student object with class and section
- * @returns {boolean} True if can access
+ * @returns {boolean}
  */
 function canAccessStudent(student) {
-  if (isAdmin()) return true;
-  
+  if (!student) return false;
   return canAccessClass(student.class, student.section);
 }
 
@@ -863,37 +1127,47 @@ function getAccessControl() {
     };
   }
   
-  const isUserAdmin = userInfo.role === "admin";
+  const role = userInfo.role;
+  const isUserAdmin     = role === "admin";
+  const isUserPrincipal = role === "principal";
+  const isUserWing      = role === "wing_admin";
+  const isUserTeacher   = role === "teacher";
+  
+  // Wing admins can do most admin work within their wing (server-side enforces scope)
+  const canManage = isUserAdmin || isUserWing;
   
   return {
     user: userInfo,
-    role: userInfo.role,
+    role: role,
     hasAccess: true,
+    readOnly: isUserPrincipal,
     // Master Data
-    canUploadStudents: isUserAdmin,
-    canUploadTeachers: isUserAdmin,
+    canUploadStudents: canManage,
+    canUploadTeachers: isUserAdmin,           // admin-only (teachers config is school-wide)
     canManageSubjects: isUserAdmin,
-    canManageClasses: isUserAdmin,
+    canManageClasses:  isUserAdmin,
     // Exams
-    canCreateExam: isUserAdmin,
-    canLockExam: isUserAdmin,
-    canDeleteExam: isUserAdmin,
+    canCreateExam: canManage,
+    canLockExam:   isUserAdmin,                // remains admin-only
+    canDeleteExam: canManage,
     // Marks
-    canEnterMarks: true, // Both admin and teachers
-    canViewMarks: true,
-    canDeleteMarks: isUserAdmin,
+    canEnterMarks:  isUserAdmin || isUserWing || isUserTeacher,
+    canViewMarks:   true,
+    canDeleteMarks: canManage,
     // Analytics & Reports
-    canViewAnalytics: true,
-    canViewReports: true,
-    canExportData: true,
-    canGenerateReportCards: isUserAdmin,
-    // Settings
-    canModifyGradeRanges: isUserAdmin,
+    canViewAnalytics:       true,
+    canViewReports:         true,
+    canExportData:          true,
+    canGenerateReportCards: canManage,
+    canViewAuditTrail:      isUserAdmin || isUserPrincipal,
+    // Settings (school-wide)
+    canModifyGradeRanges:    isUserAdmin,
     canModifySchoolSettings: isUserAdmin,
-    canResetData: isUserAdmin,
+    canResetData:            isUserAdmin,
     // Data scope
-    viewAllData: isUserAdmin,
-    filteredByAssignment: !isUserAdmin
+    viewAllData:           isUserAdmin || isUserPrincipal,
+    filteredByAssignment:  isUserWing || isUserTeacher,
+    wing:                  userInfo.wing || null
   };
 }
 

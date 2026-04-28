@@ -5,7 +5,7 @@ MVM Report Tracker is a Google Apps Script-based school report tracking system t
 
 ## Original Problem Statement
 Build a complete school report tracking system based on provided Google Apps Script files, featuring:
-- Role-based access control (Admin/Teacher)
+- Role-based access control (Admin / Principal / Wing Admin / Teacher)
 - Student, teacher, exam, and marks management for Classes 6-12
 - Analytics, reporting, and report card generation
 - Bulk data upload
@@ -136,9 +136,23 @@ See `/app/memory/test_credentials.md`. Admin emails: `rishisans83@gmail.com`, `m
 
 ## Backlog (Future)
 - Auto-promote scheduled trigger
-- Password security for teachers
+- Time-driven trigger for `rebuildAggregates()`
 - Per-language separate Subjects view in admin
 - Class teacher dashboard with class-only view
+- Multi-year analytics across Archive sheets
+
+## Changelog
+### Feb 2026 — 4-Role System (Option B)
+- Added `Role` column to Teachers sheet: `ADMIN | PRINCIPAL | WING_ADMIN | TEACHER` (single source of truth for non-super-admin roles).
+- New helpers in `3_Auth.gs`: `getRole()`, `isPrincipal()`, `isWingAdmin()`, `canWrite(action)`, `canRead()`, `getWingForClass()`, `getClassesForWing()`, `getWingAdminAssignment()`.
+- Refactored `applyTeacherFilter` → `applyScopeFilter` (4-way: admin/principal=full, wing_admin=wing classes, teacher=existing). `applyTeacherFilter` retained as backward-compat alias.
+- Wing config in `Settings_School` (`Wing_Primary=6,7,8`, `Wing_Secondary=9,10`, `Wing_Senior=11,12`) — auto-seeded; idempotent migration via `seedDefaultSchoolSettings()`.
+- Idempotent migration `ensureTeachersRoleColumn()` (auto-called from `initializeApp`, `addTeacher`, `bulkUploadTeachers`).
+- Write-gate refactor: replaced `isAdmin()` with `canWrite()` + scope helpers (`_denyIfNoStudentWrite`, `_denyIfNoExamWrite`, `_denyIfNoReportAccess`) on student CRUD, marks CRUD, exam CRUD, report generation. Lock-exam, year freeze, archive, settings remain admin-only.
+- Teacher assignment normalization: trim + standardize separators (`,`, `;`, `|` → comma) on save (`addTeacher`, `bulkUploadTeachers`, `getTeacherAssignment`).
+- `Dashboard.html`: 4-role aware UI (`applyRoleRestrictions`), Role dropdown in Add Teacher modal, Role badge column in teachers list, Principal read-only mode (CSS-disables write actions), wing/scope label in header.
+- Removed shadowing duplicate `deleteStudent` (the second declaration was hiding the proper soft-delete with audit + LockService).
+- `getTeacherByEmail` now respects `IsDeleted` and returns `role`. `getAuditLog` now allows Principal too.
 
 ## Deployment
 Refer to `0_DeploymentGuide.gs`. Web app deploy: Execute as "Me", Access "Anyone with Google account". Share only the web app URL.

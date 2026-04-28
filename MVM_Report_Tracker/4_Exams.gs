@@ -5,20 +5,43 @@
 ************************************************/
 
 /**
- * Create a new exam (Admin only)
+ * Internal: deny if user can't write the exam (based on exam class).
+ * Admin → always allowed.
+ * Wing Admin → allowed if exam class is within their wing classes; "All"-class exams are admin-only.
+ * Others → denied.
+ */
+function _denyIfNoExamWrite(examClass) {
+  const role = getRole();
+  if (role === "admin") return null;
+  if (role === "wing_admin") {
+    const cls = String(examClass || "").trim();
+    if (!cls || cls.toLowerCase() === "all") {
+      return { success: false, message: "Access denied. School-wide exams are admin-only." };
+    }
+    const wa = getWingAdminAssignment();
+    if (!(wa && wa.classes.map(String).includes(cls))) {
+      return { success: false, message: "Access denied. This class is outside your wing scope." };
+    }
+    return null;
+  }
+  return { success: false, message: "Access denied. Insufficient privileges." };
+}
+
+
+/**
+ * Create a new exam (Admin / Wing Admin within scope)
  * @param {Object} examData - Exam details
  * @returns {Object} Result object
  */
 function createExam(examData) {
-  // Validate admin access
-  if (!isAdmin()) {
-    return { success: false, message: "Access denied. Admin privileges required to create exams." };
-  }
-  
   // Validate input
   if (!examData || !examData.name || !examData.maxMarks) {
     return { success: false, message: "Exam name and max marks are required." };
   }
+  
+  // Wing-aware write gate
+  const denied = _denyIfNoExamWrite(examData.class);
+  if (denied) return denied;
   
   if (examData.maxMarks <= 0) {
     return { success: false, message: "Max marks must be greater than 0." };
@@ -181,9 +204,6 @@ function getExamById(examId) {
  * @returns {Object} Result object
  */
 function updateExam(examId, updates) {
-  if (!isAdmin()) {
-    return { success: false, message: "Access denied. Admin privileges required." };
-  }
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(30000);
@@ -199,6 +219,15 @@ function updateExam(examId, updates) {
     if (foundIdx === -1) return { success: false, message: "Exam not found." };
     
     const row = data[foundIdx];
+    
+    // Wing-aware write gate (current class + target class)
+    let deny = _denyIfNoExamWrite(row[3]);
+    if (deny) return deny;
+    if (updates.class !== undefined && String(updates.class) !== String(row[3])) {
+      deny = _denyIfNoExamWrite(updates.class);
+      if (deny) return deny;
+    }
+    
     if (row[8] === true && !updates.forceUpdate) {
       return { success: false, message: "Exam is locked. Cannot modify." };
     }
@@ -305,9 +334,6 @@ function unlockExam(examId) {
  * Soft-delete an exam (sets IsDeleted=true). Associated marks are also soft-deleted.
  */
 function deleteExam(examId) {
-  if (!isAdmin()) {
-    return { success: false, message: "Access denied. Admin privileges required to delete exams." };
-  }
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(30000);
@@ -321,6 +347,9 @@ function deleteExam(examId) {
     let foundIdx = -1;
     for (let i = 0; i < data.length; i++) { if (data[i][0] === examId && data[i][18] !== true) { foundIdx = i; break; } }
     if (foundIdx === -1) return { success: false, message: "Exam not found." };
+    
+    const deny = _denyIfNoExamWrite(data[foundIdx][3]);
+    if (deny) return deny;
     
     // Soft-delete exam
     examSheet.getRange(foundIdx + 2, 19).setValue(true);
@@ -352,7 +381,6 @@ function deleteExam(examId) {
  * Restore soft-deleted exam (and optionally cascaded marks)
  */
 function restoreExam(examId, restoreMarks) {
-  if (!isAdmin()) return { success: false, message: "Access denied. Admin only." };
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(30000);
@@ -364,6 +392,10 @@ function restoreExam(examId, restoreMarks) {
     let foundIdx = -1;
     for (let i = 0; i < data.length; i++) { if (data[i][0] === examId && data[i][18] === true) { foundIdx = i; break; } }
     if (foundIdx === -1) return { success: false, message: "Exam not found in trash." };
+    
+    const deny = _denyIfNoExamWrite(data[foundIdx][3]);
+    if (deny) return deny;
+    
     examSheet.getRange(foundIdx + 2, 19).setValue(false);
     
     let marksRestored = 0;
@@ -393,14 +425,21 @@ function restoreExam(examId, restoreMarks) {
  * Get soft-deleted exams (for Trash UI)
  */
 function getDeletedExams() {
-  if (!isAdmin()) return [];
+  const role = getRole();
+  if (!role || role === "teacher") return [];
   const sheet = SpreadsheetApp.getActive().getSheetByName("Exams");
   const lastRow = sheet.getLastRow();
   if (lastRow <= 1) return [];
   const data = sheet.getRange(2, 1, lastRow - 1, 19).getValues();
-  return data.filter(r => r[0] && r[18] === true).map(r => ({
+  let items = data.filter(r => r[0] && r[18] === true).map(r => ({
     examId: r[0], name: r[1], examType: r[2], class: r[3], maxMarks: r[4], academicYear: r[11]
   }));
+  if (role === "wing_admin") {
+    const wa = getWingAdminAssignment();
+    const allowed = wa ? wa.classes.map(String) : [];
+    items = items.filter(e => allowed.includes(String(e.class)));
+  }
+  return items;
 }
 
 

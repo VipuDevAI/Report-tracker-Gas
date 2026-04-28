@@ -73,7 +73,7 @@ function initializeApp() {
     Teachers: [
       "TeacherID", "Name", "Subject", "Classes", "Sections", 
       "Email", "Phone", "JoinDate", "Status", "IsClassTeacher", "ClassTeacherOf",
-      "IsDeleted"
+      "IsDeleted", "Role"
     ],
     Subjects: [
       "SubjectID", "SubjectName", "SubjectCode", "Class", "Stream", 
@@ -147,6 +147,9 @@ function initializeApp() {
   seedDefaultSubjects();
   seedDefaultClasses();
   
+  // Idempotent migrations (safe on existing deployments)
+  ensureTeachersRoleColumn();
+  
   logAction("Initialize App", "Application initialized successfully");
   
   SpreadsheetApp.flush();
@@ -195,12 +198,55 @@ function seedDefaultSchoolSettings() {
     ["Email", "", new Date()],
     ["IsYearFinalized", "false", new Date()],
     ["LastAggregatesUpdatedAt", "", new Date()],
-    ["SessionDurationHours", "8", new Date()]
+    ["SessionDurationHours", "8", new Date()],
+    ["Wing_Primary", "6,7,8", new Date()],
+    ["Wing_Secondary", "9,10", new Date()],
+    ["Wing_Senior", "11,12", new Date()]
   ];
 
   if (sheet.getLastRow() <= 1) {
     sheet.getRange(2, 1, settings.length, 3).setValues(settings);
+    return;
   }
+  
+  // Idempotent: append any missing setting keys (e.g., Wing_* on existing deployments)
+  const existing = sheet.getDataRange().getValues();
+  const existingKeys = new Set(existing.slice(1).map(r => String(r[0] || "")));
+  const toAppend = settings.filter(s => !existingKeys.has(s[0]));
+  if (toAppend.length > 0) {
+    const startRow = sheet.getLastRow() + 1;
+    sheet.getRange(startRow, 1, toAppend.length, 3).setValues(toAppend);
+  }
+}
+
+
+/**
+ * Idempotent: ensure the Teachers sheet has the new "Role" column.
+ * Safe to call repeatedly. Returns true if a migration was applied.
+ */
+function ensureTeachersRoleColumn() {
+  const sheet = SpreadsheetApp.getActive().getSheetByName("Teachers");
+  if (!sheet) return false;
+  const lastCol = sheet.getLastColumn();
+  if (lastCol >= 13) {
+    // Header may already be there; ensure label
+    const header = sheet.getRange(1, 13).getValue();
+    if (!header) sheet.getRange(1, 13).setValue("Role");
+    return false;
+  }
+  // Add the Role header at column 13
+  sheet.getRange(1, 13).setValue("Role");
+  sheet.getRange(1, 13).setFontWeight("bold");
+  sheet.getRange(1, 13).setBackground("#1a6b3a");
+  sheet.getRange(1, 13).setFontColor("#ffffff");
+  // Default existing rows to "TEACHER" (skip blank rows)
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    const emails = sheet.getRange(2, 6, lastRow - 1, 1).getValues();
+    const roleCol = emails.map(r => [r[0] ? "TEACHER" : ""]);
+    sheet.getRange(2, 13, lastRow - 1, 1).setValues(roleCol);
+  }
+  return true;
 }
 
 

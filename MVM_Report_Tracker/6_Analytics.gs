@@ -432,7 +432,9 @@ function getDashboardKPIs() {
     totalEntries: rangeData.total,
     academicYear: currentYear,
     userRole: userRole,
-    dataScope: userRole === "admin" ? "All Data" : "Your Assigned Data"
+    dataScope: (userRole === "admin" || userRole === "principal") ? "All Data"
+             : userRole === "wing_admin" ? "Your Wing"
+             : "Your Assigned Data"
   };
 }
 
@@ -442,9 +444,22 @@ function getDashboardKPIs() {
  * @returns {Object} Teacher-specific analytics
  */
 function getMyAnalytics() {
-  if (isAdmin()) {
+  const role = getRole();
+  if (role === "admin" || role === "principal") {
     return {
-      message: "Admin view - showing all data",
+      message: role === "admin" ? "Admin view - showing all data" : "Principal view - read-only, all data",
+      subjectPerformance: getSubjectPerformance(),
+      classPerformance: getClassPerformance(),
+      weakStudents: getWeakStudents(),
+      toppers: getToppers(null, 10)
+    };
+  }
+  
+  if (role === "wing_admin") {
+    const wa = getWingAdminAssignment();
+    return {
+      message: `Wing Admin view — ${wa && wa.wing ? wa.wing : ''} Wing — Classes: ${wa ? wa.classes.join(", ") : ""}`,
+      wing: wa,
       subjectPerformance: getSubjectPerformance(),
       classPerformance: getClassPerformance(),
       weakStudents: getWeakStudents(),

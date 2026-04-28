@@ -13,9 +13,9 @@
  * @returns {Object} Result object with action: 'created' | 'updated'
  */
 function addMarks(marksData) {
-  // Validate teacher/admin access
-  if (!isAdmin() && !isTeacher()) {
-    return { success: false, message: "Access denied. Teacher or Admin privileges required." };
+  // Validate write access (admin / wing_admin / teacher; principal denied)
+  if (!canWrite('marks')) {
+    return { success: false, message: "Access denied. Insufficient privileges to enter marks." };
   }
   
   if (!marksData.studentId || !marksData.subject || !marksData.examId) {
@@ -65,7 +65,12 @@ function addMarks(marksData) {
       };
     }
     
-    if (!isAdmin()) {
+    const userRole = getRole();
+    if (userRole === "wing_admin") {
+      const wa = getWingAdminAssignment();
+      const allowed = wa && wa.classes.map(String).includes(String(student.class));
+      if (!allowed) return { success: false, message: "Access denied. This class is outside your wing scope." };
+    } else if (userRole === "teacher") {
       const assignment = getTeacherAssignment();
       if (!assignment) return { success: false, message: "Teacher assignment not found." };
       if (assignment.subject !== "All" && assignment.subject !== marksData.subject) {
@@ -157,7 +162,7 @@ function addMarks(marksData) {
  * @returns {Object} Result object with success/fail counts
  */
 function bulkAddMarks(marksArray) {
-  if (!isAdmin() && !isTeacher()) {
+  if (!canWrite('marks')) {
     return { success: false, message: "Access denied." };
   }
   
@@ -189,8 +194,12 @@ function bulkAddMarks(marksArray) {
     const teacher = getTeacherByEmail(getActualUserEmail());
     const teacherId = teacher ? teacher.teacherId : "ADMIN";
     const teacherName = teacher ? teacher.name : "Administrator";
-    const isUserAdmin = isAdmin();
-    const assignment = isUserAdmin ? null : getTeacherAssignment();
+    const userRole = getRole();
+    const isUserAdmin = userRole === "admin";
+    const isUserWing = userRole === "wing_admin";
+    const wingAssignment = isUserWing ? getWingAdminAssignment() : null;
+    const wingClasses = wingAssignment ? wingAssignment.classes.map(String) : [];
+    const assignment = (userRole === "teacher") ? getTeacherAssignment() : null;
     
     const marksSheet = ss.getSheetByName("Marks_Master");
     const marksLastRow = marksSheet.getLastRow();
@@ -233,7 +242,11 @@ function bulkAddMarks(marksArray) {
         failCount++; errors.push({ row: idx + 1, error: `Subject "${m.subject}" not valid for ${student.name}` }); return;
       }
       
-      if (!isUserAdmin) {
+      if (isUserWing) {
+        if (!wingClasses.includes(String(student.class))) {
+          failCount++; errors.push({ row: idx + 1, error: "Outside your wing scope" }); return;
+        }
+      } else if (!isUserAdmin) {
         if (!assignment) { failCount++; errors.push({ row: idx + 1, error: "Teacher assignment not found" }); return; }
         if (assignment.subject !== "All" && assignment.subject !== m.subject) {
           failCount++; errors.push({ row: idx + 1, error: `You can only enter ${assignment.subject}` }); return;
@@ -490,8 +503,8 @@ function getGradeColor(grade) {
  * @returns {Object} Result object
  */
 function deleteMarks(entryId) {
-  if (!isAdmin()) {
-    return { success: false, message: "Access denied. Admin privileges required." };
+  if (!canWrite('marks')) {
+    return { success: false, message: "Access denied. Insufficient privileges." };
   }
   
   const lock = LockService.getScriptLock();
@@ -522,6 +535,26 @@ function deleteMarks(entryId) {
       return { success: false, message: "Entry not found or already deleted." };
     }
     
+    // Wing-scope check: ensure this row's class is in the user's wing (admin/teacher pass through)
+    const role = getRole();
+    if (role === "wing_admin") {
+      const wa = getWingAdminAssignment();
+      const cls = String(foundRow[9] || "");
+      if (!(wa && wa.classes.map(String).includes(cls))) {
+        return { success: false, message: "Access denied. This class is outside your wing scope." };
+      }
+    } else if (role === "teacher") {
+      // Teachers may only delete marks in their assignment scope
+      const a = getTeacherAssignment();
+      if (!a) return { success: false, message: "Teacher assignment not found." };
+      if (a.subject !== "All" && a.subject !== foundRow[3]) {
+        return { success: false, message: "You can only manage marks for your subject." };
+      }
+      if (!a.hasAllClasses && !a.classes.includes(String(foundRow[9]))) {
+        return { success: false, message: "You don't have permission for this class." };
+      }
+    }
+    
     if (isExamLocked(foundExamId)) {
       return { success: false, message: "Exam is locked. No edits allowed." };
     }
@@ -545,7 +578,7 @@ function deleteMarks(entryId) {
  * Restore a soft-deleted marks entry
  */
 function restoreMarks(entryId) {
-  if (!isAdmin()) return { success: false, message: "Access denied. Admin only." };
+  if (!canWrite('marks')) return { success: false, message: "Access denied." };
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(30000);
@@ -556,6 +589,14 @@ function restoreMarks(entryId) {
     const data = sheet.getRange(2, 1, lastRow - 1, 20).getValues();
     for (let i = 0; i < data.length; i++) {
       if (data[i][0] === entryId && data[i][19] === true) {
+        // Wing-scope check
+        const role = getRole();
+        if (role === "wing_admin") {
+          const wa = getWingAdminAssignment();
+          if (!(wa && wa.classes.map(String).includes(String(data[i][9])))) {
+            return { success: false, message: "Access denied. Outside your wing scope." };
+          }
+        }
         sheet.getRange(i + 2, 20).setValue(false);
         sheet.getRange(i + 2, 16).setValue(new Date());
         sheet.getRange(i + 2, 17).setValue(getActualUserEmail() || "System");
@@ -574,8 +615,12 @@ function restoreMarks(entryId) {
  * Get soft-deleted marks (for Trash UI)
  */
 function getDeletedMarks(page, limit) {
-  if (!isAdmin()) return { data: [], total: 0, page: 1, limit: 100, totalPages: 0, error: "Access denied." };
-  const all = getMarks({ includeDeleted: true, academicYear: null }).filter(m => m.isDeleted);
+  const role = getRole();
+  if (!role || role === "teacher") {
+    return { data: [], total: 0, page: 1, limit: 100, totalPages: 0, error: "Access denied." };
+  }
+  let all = getMarks({ includeDeleted: true, academicYear: null }).filter(m => m.isDeleted);
+  // applyScopeFilter via getMarks already applied for non-admin/principal callers
   all.sort((a, b) => {
     const ta = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
     const tb = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
@@ -915,8 +960,10 @@ function getMarksPage(filters, page, limit) {
  * @returns {Object} { data, total, page, limit, totalPages }
  */
 function getAuditLog(filters, page, limit) {
-  if (!isAdmin()) {
-    return { data: [], total: 0, page: 1, limit: 100, totalPages: 0, error: "Access denied. Admin only." };
+  // Admins and Principals can view audit log
+  const role = getRole();
+  if (role !== "admin" && role !== "principal") {
+    return { data: [], total: 0, page: 1, limit: 100, totalPages: 0, error: "Access denied. Admin or Principal only." };
   }
   
   const sheet = SpreadsheetApp.getActive().getSheetByName("Marks_Master");

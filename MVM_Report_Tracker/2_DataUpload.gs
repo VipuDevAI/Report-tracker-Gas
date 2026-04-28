@@ -5,6 +5,28 @@
 ************************************************/
 
 /**
+ * Internal: assert the current user can write to a student in the given class.
+ * Admin → always allowed.
+ * Wing Admin → allowed if class is within their wing scope.
+ * Teacher → not allowed (use marks endpoints).
+ * Principal → never allowed.
+ *
+ * @param {string|number} cls - Class number of the student being touched
+ * @returns {Object|null} null if allowed, else { success:false, message }
+ */
+function _denyIfNoStudentWrite(cls) {
+  const role = getRole();
+  if (role === "admin") return null;
+  if (role === "wing_admin") {
+    const wa = getWingAdminAssignment();
+    const allowed = wa && wa.classes.map(String).includes(String(cls || ""));
+    if (!allowed) return { success: false, message: "Access denied. This class is outside your wing scope." };
+    return null;
+  }
+  return { success: false, message: "Access denied. Insufficient privileges." };
+}
+
+/**
  * Bulk upload students from CSV/array data
  * @param {Array} data - 2D array of student data
  * @param {Object} options - { updateExisting: boolean, preview: boolean }
@@ -201,6 +223,9 @@ function bulkUploadTeachers(data, options) {
     return { success: false, message: "No data provided." };
   }
   
+  // Idempotent migration for the Role column
+  try { ensureTeachersRoleColumn(); } catch (e) {}
+  
   const opts = options || {};
   const updateExisting = opts.updateExisting || false;
   const previewOnly = opts.preview || false;
@@ -234,11 +259,18 @@ function bulkUploadTeachers(data, options) {
     const teacherId = row[0] || `TCH${Date.now()}${rowIdx}`;
     const name = row[1] || "";
     const subject = row[2] || "";
-    const classes = row[3] || "";
-    const sections = row[4] || "";
+    // Normalize classes/sections: trim, standardize separators to comma
+    const splitNorm = (s) => String(s || "").split(/[,;|]/).map(x => x.trim()).filter(x => x).join(",");
+    const classes = splitNorm(row[3]);
+    const sections = splitNorm(row[4]);
     const email = row[5] || "";
     const phone = row[6] || "";
     const status = row[7] || "Active";
+    // Optional Role column (index 8) — supports new CSVs; defaults to TEACHER
+    const validRoles = ["ADMIN", "PRINCIPAL", "WING_ADMIN", "TEACHER"];
+    let role = String(row[8] || "TEACHER").trim().toUpperCase();
+    if (role === "WINGADMIN") role = "WING_ADMIN";
+    if (!validRoles.includes(role)) role = "TEACHER";
     
     // Validation
     if (!name) {
@@ -269,7 +301,11 @@ function bulkUploadTeachers(data, options) {
       email,
       phone,
       new Date(),
-      status
+      status,
+      "",   // IsClassTeacher (index 9)
+      "",   // ClassTeacherOf (index 10)
+      false, // IsDeleted (index 11)
+      role   // Role (index 12)
     ];
     
     const existingByEmail = existingIndex[email.toLowerCase()];
@@ -313,15 +349,15 @@ function bulkUploadTeachers(data, options) {
     };
   }
   
-  // Write new teachers
+  // Write new teachers (13 cols including Role)
   if (toCreate.length > 0) {
     const lastRow = sheet.getLastRow();
-    sheet.getRange(lastRow + 1, 1, toCreate.length, 9).setValues(toCreate);
+    sheet.getRange(lastRow + 1, 1, toCreate.length, 13).setValues(toCreate);
   }
   
-  // Update existing teachers
+  // Update existing teachers (13 cols including Role)
   toUpdate.forEach(item => {
-    sheet.getRange(item.rowIndex, 1, 1, 9).setValues([item.data]);
+    sheet.getRange(item.rowIndex, 1, 1, 13).setValues([item.data]);
   });
   
   logAction("Bulk Upload Teachers", `Created: ${results.created}, Updated: ${results.updated}, Failed: ${results.failed}`);
@@ -357,13 +393,12 @@ function replaceStudents(data) {
  * @returns {Object} Result object
  */
 function addStudent(student) {
-  if (!isAdmin()) {
-    return { success: false, message: "Access denied. Admin privileges required." };
-  }
-  
   if (!student || !student.name || !student.class) {
     return { success: false, message: "Name and Class are required." };
   }
+  
+  const deny = _denyIfNoStudentWrite(student.class);
+  if (deny) return deny;
   
   // Validate elective subject for class 11 & 12
   const validElectives = ['Mathematics', 'Applied Mathematics', 'Hindi', 'History', 'Sanskrit', 'Computer Science', 'Biology'];
@@ -418,10 +453,6 @@ function addStudent(student) {
  * @returns {Object} Result object
  */
 function updateStudent(studentId, updates) {
-  if (!isAdmin()) {
-    return { success: false, message: "Access denied. Admin privileges required." };
-  }
-  
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(30000);
@@ -442,6 +473,16 @@ function updateStudent(studentId, updates) {
     }
     
     const row = data[foundIdx];
+    
+    // Scope-check: writer must own current class AND target class
+    const currentClass = row[2];
+    const targetClass = updates.class || currentClass;
+    let deny = _denyIfNoStudentWrite(currentClass);
+    if (deny) return deny;
+    if (String(targetClass) !== String(currentClass)) {
+      deny = _denyIfNoStudentWrite(targetClass);
+      if (deny) return deny;
+    }
     const updatedRow = [
       studentId,
       updates.name || row[1],
@@ -477,7 +518,6 @@ function updateStudent(studentId, updates) {
  * Soft-delete a student (sets IsDeleted=true)
  */
 function deleteStudent(studentId) {
-  if (!isAdmin()) return { success: false, message: "Access denied. Admin only." };
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(30000);
@@ -488,6 +528,8 @@ function deleteStudent(studentId) {
     const data = sheet.getRange(2, 1, lastRow - 1, 16).getValues();
     for (let i = 0; i < data.length; i++) {
       if (data[i][0] === studentId && data[i][15] !== true) {
+        const deny = _denyIfNoStudentWrite(data[i][2]);
+        if (deny) return deny;
         sheet.getRange(i + 2, 16).setValue(true);
         try { writeAudit("DELETE_STUDENT", "Student", studentId, "IsDeleted", "false", "true", { name: data[i][1], class: data[i][2], section: data[i][3] }); } catch (e) {}
         logAction("Delete Student", `Soft-deleted student: ${studentId}`);
@@ -505,7 +547,6 @@ function deleteStudent(studentId) {
  * Restore a soft-deleted student
  */
 function restoreStudent(studentId) {
-  if (!isAdmin()) return { success: false, message: "Access denied. Admin only." };
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(30000);
@@ -515,6 +556,8 @@ function restoreStudent(studentId) {
     const data = sheet.getRange(2, 1, lastRow - 1, 16).getValues();
     for (let i = 0; i < data.length; i++) {
       if (data[i][0] === studentId && data[i][15] === true) {
+        const deny = _denyIfNoStudentWrite(data[i][2]);
+        if (deny) return deny;
         sheet.getRange(i + 2, 16).setValue(false);
         try { writeAudit("RESTORE_STUDENT", "Student", studentId, "IsDeleted", "true", "false", {}); } catch (e) {}
         return { success: true, message: "Student restored." };
@@ -529,31 +572,29 @@ function restoreStudent(studentId) {
 
 /**
  * Get soft-deleted students for Trash UI
+ * Admin/Principal: full list. Wing Admin: only their wing's classes. Teacher: empty.
  */
 function getDeletedStudents() {
-  if (!isAdmin()) return [];
+  const role = getRole();
+  if (!role || role === "teacher") return [];
   const sheet = SpreadsheetApp.getActive().getSheetByName("Students");
   const lastRow = sheet.getLastRow();
   if (lastRow <= 1) return [];
   const data = sheet.getRange(2, 1, lastRow - 1, 16).getValues();
-  return data.filter(r => r[0] && r[15] === true).map(r => ({
+  let items = data.filter(r => r[0] && r[15] === true).map(r => ({
     studentId: r[0], name: r[1], class: r[2], section: r[3], stream: r[4],
     rollNo: r[5], academicYear: r[11]
   }));
-}
-
-
-/**
- * Delete student (soft delete - set status to Inactive)
- * @param {string} studentId - Student ID to delete
- * @returns {Object} Result object
- */
-function deleteStudent(studentId) {
-  if (!isAdmin()) {
-    return { success: false, message: "Access denied. Admin privileges required." };
+  if (role === "wing_admin") {
+    const wa = getWingAdminAssignment();
+    const allowed = wa ? wa.classes.map(String) : [];
+    items = items.filter(s => allowed.includes(String(s.class)));
   }
-  return updateStudent(studentId, { status: "Inactive" });
+  return items;
 }
+
+
+// (Removed duplicate deleteStudent that shadowed the soft-delete implementation above.)
 
 
 /**
@@ -688,11 +729,25 @@ function addTeacher(teacher) {
     return { success: false, message: "Email is required (used for Google login)." };
   }
   
+  // Idempotent migration for the Role column
+  try { ensureTeachersRoleColumn(); } catch (e) {}
+  
   // Check if email already exists
   const existingTeacher = getTeacherByEmail(teacher.email);
   if (existingTeacher) {
     return { success: false, message: "A teacher with this email already exists." };
   }
+  
+  // Normalize role
+  const validRoles = ["ADMIN", "PRINCIPAL", "WING_ADMIN", "TEACHER"];
+  let role = String(teacher.role || "TEACHER").trim().toUpperCase();
+  if (role === "WINGADMIN") role = "WING_ADMIN";
+  if (!validRoles.includes(role)) role = "TEACHER";
+  
+  // Normalize classes/sections: trim, standardize separators to comma
+  const splitNorm = (s) => String(s || "").split(/[,;|]/).map(x => x.trim()).filter(x => x).join(",");
+  const classes = splitNorm(teacher.classes);
+  const sections = splitNorm(teacher.sections);
   
   const sheet = SpreadsheetApp.getActive().getSheetByName("Teachers");
   const teacherId = `TCH${Date.now()}`;
@@ -701,19 +756,23 @@ function addTeacher(teacher) {
     teacherId,
     teacher.name,
     teacher.subject || "",
-    teacher.classes || "",
-    teacher.sections || "",
+    classes,
+    sections,
     teacher.email,
     teacher.phone || "",
     new Date(),
-    "Active"
+    "Active",
+    "",      // IsClassTeacher
+    "",      // ClassTeacherOf
+    false,   // IsDeleted
+    role     // Role
   ]);
   
-  logAction("Add Teacher", `Added teacher: ${teacher.name} (${teacher.email})`);
+  logAction("Add Teacher", `Added teacher: ${teacher.name} (${teacher.email}) [${role}]`);
   
   return { 
     success: true, 
-    message: "Teacher added successfully! They can now login using their Google account.", 
+    message: `${role.replace('_',' ').toLowerCase()} added successfully! They can now login with their email & password.`,
     teacherId: teacherId
   };
 }
@@ -725,8 +784,36 @@ function addTeacher(teacher) {
  * @returns {Array} Filtered teachers
  */
 function getTeachers(filters) {
-  if (!isAdmin()) {
-    // Teachers can only see their own info
+  const role = getRole();
+  if (!role) return [];
+  
+  // Non-admin/principal: limited visibility
+  if (role !== "admin" && role !== "principal") {
+    if (role === "wing_admin") {
+      // Wing admin sees teachers whose Classes intersect their wing
+      const sheet = SpreadsheetApp.getActive().getSheetByName("Teachers");
+      const data = sheet.getDataRange().getValues();
+      if (data.length <= 1) return [];
+      const wa = getWingAdminAssignment();
+      const wingClasses = wa ? wa.classes.map(String) : [];
+      const splitNorm = (s) => String(s || "").split(/[,;|]/).map(x => x.trim()).filter(x => x);
+      
+      let teachers = data.slice(1)
+        .filter(r => r[0] && (r[11] !== true)) // skip deleted
+        .map(r => ({
+          teacherId: r[0], name: r[1], subject: r[2],
+          classes: r[3], sections: r[4], email: r[5], phone: r[6],
+          joinDate: r[7], status: r[8],
+          role: (String(r[12] || "TEACHER").toUpperCase())
+        }))
+        .filter(t => {
+          const tc = splitNorm(t.classes).map(String);
+          return tc.some(c => wingClasses.includes(c));
+        });
+      return teachers;
+    }
+    
+    // Plain teacher: only their own info
     const assignment = getTeacherAssignment();
     if (assignment) {
       return [{
@@ -736,7 +823,8 @@ function getTeachers(filters) {
         classes: assignment.classes.join(","),
         sections: assignment.sections.join(","),
         email: assignment.email,
-        status: "Active"
+        status: "Active",
+        role: (assignment.role || "TEACHER")
       }];
     }
     return [];
@@ -747,21 +835,30 @@ function getTeachers(filters) {
   
   if (data.length <= 1) return [];
   
-  let teachers = data.slice(1).map(row => ({
-    teacherId: row[0],
-    name: row[1],
-    subject: row[2],
-    classes: row[3],
-    sections: row[4],
-    email: row[5],
-    phone: row[6],
-    joinDate: row[7],
-    status: row[8]
-  }));
+  let teachers = data.slice(1)
+    .filter(row => row[0] && (row[11] !== true)) // skip deleted
+    .map(row => ({
+      teacherId: row[0],
+      name: row[1],
+      subject: row[2],
+      classes: row[3],
+      sections: row[4],
+      email: row[5],
+      phone: row[6],
+      joinDate: row[7],
+      status: row[8],
+      isClassTeacher: row[9],
+      classTeacherOf: row[10],
+      role: (String(row[12] || "TEACHER").toUpperCase())
+    }));
   
   if (filters) {
     if (filters.subject) {
       teachers = teachers.filter(t => t.subject === filters.subject);
+    }
+    if (filters.role) {
+      const r = String(filters.role).toUpperCase();
+      teachers = teachers.filter(t => t.role === r);
     }
     if (filters.status) {
       teachers = teachers.filter(t => t.status === filters.status);

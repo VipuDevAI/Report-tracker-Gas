@@ -12,7 +12,34 @@ The system now uses **email + password** authentication. On first login, every u
 **Super-admin** (only one who can UNFREEZE a finalized year): the FIRST email in the list → `rishisans83@gmail.com`
 
 ### Teacher Logins
-Any email present in the `Teachers` sheet (status = Active) can log in. Add teachers via Admin → Teachers_Master sheet, then click "Sync Teachers" in the dashboard.
+Any email present in the `Teachers` sheet (status = Active, IsDeleted ≠ true) can log in. Add teachers via Admin → Teachers_Master sheet, then click "Sync Teachers" in the dashboard.
+
+### Roles (NEW — Role column on Teachers sheet)
+The Teachers sheet now has a `Role` column (column 13). Supported values:
+- `ADMIN`     — full school-wide access
+- `PRINCIPAL` — full READ-ONLY access (analytics, reports, audit, trash). Cannot create/update/delete.
+- `WING_ADMIN` — admin powers but restricted to a class range (their wing). Set the wing via the `Classes` column, either explicit (e.g. `9,10`) or by wing name (`PRIMARY`/`SECONDARY`/`SENIOR`).
+- `TEACHER`   — existing assignment-based access (subject + classes + sections). DEFAULT if column is empty.
+
+Wing class ranges are stored in `Settings_School`:
+- `Wing_Primary`   → `6,7,8`
+- `Wing_Secondary` → `9,10`
+- `Wing_Senior`    → `11,12`
+
+Existing data is auto-migrated: rows with empty Role are treated as `TEACHER`. Admin emails in `ADMIN_EMAIL_LIST` continue to override the sheet (super-admin escape hatch).
+
+### Manual test plan for the new role system
+1. Add 3 users via the "Add Teacher" modal:
+   - Principal (Role=PRINCIPAL, blank classes)
+   - Wing Admin (Role=WING_ADMIN, Classes="9,10")
+   - Teacher (Role=TEACHER, Subject=Math, Classes="9", Sections="A1,A2")
+2. Each user sets their password on first login.
+3. Verify:
+   - Principal: dashboard loads with all data; all action buttons disabled (read-only mode); Trash & Audit visible.
+   - Wing Admin: can add/edit/delete students for class 9 & 10 only; cannot touch class 11/12.
+   - Wing Admin: can create exams for class 9/10 only; cannot lock exams; reports limited to wing.
+   - Wing Admin: can save/delete marks for any subject in their wing's classes.
+   - Teacher: only sees their assigned classes/sections; can only enter marks for their subject.
 
 ## First-Time Login Flow
 1. Enter email → click Continue

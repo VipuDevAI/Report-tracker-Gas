@@ -1,8 +1,33 @@
 /************************************************
  MVM REPORT TRACKER - REPORTS & EXPORTS
  File 7 of 7
- With Report Card Generation (Admin Only)
+ With Report Card Generation (Admin / Wing Admin / Principal)
 ************************************************/
+
+/**
+ * Internal: deny if user can't access reports for the given class.
+ * Admin & Principal → always allowed (Principal is read-only).
+ * Wing Admin → allowed only if class is in their wing scope (or class omitted = batch).
+ *   For batch operations spanning multiple classes, the caller should pre-filter by wing.
+ * Teacher → denied.
+ *
+ * @param {string|number} classNum - Class number being touched (optional)
+ * @returns {Object|null}
+ */
+function _denyIfNoReportAccess(classNum) {
+  const role = getRole();
+  if (role === "admin" || role === "principal") return null;
+  if (role === "wing_admin") {
+    if (!classNum) return null; // batch — caller filters
+    const wa = getWingAdminAssignment();
+    if (!(wa && wa.classes.map(String).includes(String(classNum)))) {
+      return { success: false, message: "Access denied. This class is outside your wing scope." };
+    }
+    return null;
+  }
+  return { success: false, message: "Access denied. Insufficient privileges." };
+}
+
 
 /**
  * Generate student report card (Admin only)
@@ -116,9 +141,8 @@ function generateStudentReport(studentId, examId) {
  * @returns {Object} Report cards data
  */
 function generateClassReportCards(classNum, section, examId) {
-  if (!isAdmin()) {
-    return { success: false, message: "Access denied. Admin privileges required to generate report cards." };
-  }
+  const denied = _denyIfNoReportAccess(classNum);
+  if (denied) return denied;
   
   // Get students for the class
   const studentsSheet = SpreadsheetApp.getActive().getSheetByName("Students");
@@ -336,9 +360,11 @@ function generateReportCardHTML(reportData) {
  * @returns {Object} Result with PDF blob
  */
 function generateReportCardPDF(studentId, examId) {
-  if (!isAdmin()) {
-    return { success: false, message: "Access denied. Admin privileges required to generate report cards." };
-  }
+  // Resolve student class for scope check
+  const _allStudents = getStudents({ status: "Active" });
+  const _student = _allStudents.find(s => s.studentId === studentId);
+  const denied = _denyIfNoReportAccess(_student ? _student.class : null);
+  if (denied) return denied;
   
   const reportData = generateStudentReport(studentId, examId);
   if (!reportData.success) {
@@ -374,9 +400,8 @@ function generateReportCardPDF(studentId, examId) {
  * @returns {Object} Result with ZIP download URL
  */
 function generateClassReportCardsPDF(classNum, section, examId) {
-  if (!isAdmin()) {
-    return { success: false, message: "Access denied. Admin privileges required to generate report cards." };
-  }
+  const denied = _denyIfNoReportAccess(classNum);
+  if (denied) return denied;
   
   const classData = generateClassReportCards(classNum, section, examId);
   if (!classData.success) {
@@ -593,9 +618,8 @@ function generateClassReport(classNum, section, examId) {
  * @returns {Object} Result with download URL
  */
 function downloadClassExamMarks(classNum, section, examId) {
-  if (!isAdmin()) {
-    return { success: false, message: "Access denied. Admin privileges required." };
-  }
+  const denied = _denyIfNoReportAccess(classNum);
+  if (denied) return denied;
   
   if (!classNum || !examId) {
     return { success: false, message: "Class and Exam are required." };
@@ -756,9 +780,8 @@ function downloadClassExamMarks(classNum, section, examId) {
  * @returns {Object} Result with CSV data
  */
 function downloadClassExamMarksCSV(classNum, section, examId) {
-  if (!isAdmin()) {
-    return { success: false, message: "Access denied. Admin privileges required." };
-  }
+  const denied = _denyIfNoReportAccess(classNum);
+  if (denied) return denied;
   
   if (!classNum || !examId) {
     return { success: false, message: "Class and Exam are required." };
@@ -1201,7 +1224,8 @@ function _pdfDeleteJob(jobId) {
  * List active PDF jobs (admin only) — for resume UI
  */
 function listPdfJobs() {
-  if (!isAdmin()) return [];
+  const role = getRole();
+  if (role !== "admin" && role !== "principal" && role !== "wing_admin") return [];
   const props = _pdfJobScope().getProperties();
   const jobs = [];
   Object.keys(props).forEach(k => {
@@ -1240,9 +1264,8 @@ function listPdfJobs() {
  * @returns {Object} { success, jobId, totalStudents, message, ... }
  */
 function startBatchedReportCardGeneration(classNum, section, examId, chunkSize) {
-  if (!isAdmin()) {
-    return { success: false, message: "Access denied. Admin only." };
-  }
+  const denied = _denyIfNoReportAccess(classNum);
+  if (denied) return denied;
   if (!classNum) return { success: false, message: "Class is required." };
   if (!examId) return { success: false, message: "Exam is required." };
   
@@ -1321,7 +1344,10 @@ function startBatchedReportCardGeneration(classNum, section, examId, chunkSize) 
  * @returns {Object} { success, status: 'RUNNING'|'COMPLETE'|'PAUSED', completed, totalStudents, percentage, errors, folderUrl, message }
  */
 function processBatchedReportCardChunk(jobId) {
-  if (!isAdmin()) return { success: false, message: "Access denied. Admin only." };
+  const role = getRole();
+  if (role !== "admin" && role !== "wing_admin") {
+    return { success: false, message: "Access denied." };
+  }
   
   const lock = LockService.getScriptLock();
   try {
@@ -1431,7 +1457,10 @@ function processBatchedReportCardChunk(jobId) {
  * Get current status of a job (read-only, for polling/UI)
  */
 function getPdfJobStatus(jobId) {
-  if (!isAdmin()) return { success: false, message: "Access denied." };
+  const role = getRole();
+  if (role !== "admin" && role !== "wing_admin" && role !== "principal") {
+    return { success: false, message: "Access denied." };
+  }
   const job = _pdfLoadJob(jobId);
   if (!job) return { success: false, message: "Job not found." };
   const pct = job.totalStudents > 0 ? Math.round((job.completed / job.totalStudents) * 100) : 0;
@@ -1458,7 +1487,10 @@ function getPdfJobStatus(jobId) {
  * Cancel and remove a job (does NOT delete already-generated PDFs in Drive)
  */
 function cancelPdfJob(jobId) {
-  if (!isAdmin()) return { success: false, message: "Access denied." };
+  const role = getRole();
+  if (role !== "admin" && role !== "wing_admin") {
+    return { success: false, message: "Access denied." };
+  }
   const job = _pdfLoadJob(jobId);
   if (!job) return { success: false, message: "Job not found." };
   _pdfDeleteJob(jobId);

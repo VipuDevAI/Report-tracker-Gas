@@ -1608,11 +1608,12 @@
               <th>Subject</th>
               <th>Classes</th>
               <th>Email</th>
+              <th>Role</th>
               <th>Status</th>
             </tr>
           </thead>
           <tbody id="teachersBody">
-            <tr><td colspan="6" class="loading"><div class="spinner"></div></td></tr>
+            <tr><td colspan="7" class="loading"><div class="spinner"></div></td></tr>
           </tbody>
         </table>
       </div>
@@ -2825,7 +2826,20 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
           <label class="form-label">Sections (comma separated)</label>
           <input type="text" class="form-input" id="newTeacherSections" placeholder="A,B,C,D">
         </div>
-        <button type="submit" class="btn btn-primary">Add Teacher</button>
+        <div class="form-group">
+          <label class="form-label">Role *</label>
+          <select class="form-input" id="newTeacherRole" required data-testid="new-teacher-role">
+            <option value="TEACHER">Teacher (subject-scoped)</option>
+            <option value="WING_ADMIN">Wing Admin (manages a class range)</option>
+            <option value="PRINCIPAL">Principal (read-only, full visibility)</option>
+            <option value="ADMIN">Admin (full school-wide access)</option>
+          </select>
+          <small style="color: var(--text-secondary); font-size: 11px;">
+            Wing Admin: enter wing classes in the "Classes" field (e.g. "9,10" or "SECONDARY").
+            Principal/Admin: leave Classes/Sections blank.
+          </small>
+        </div>
+        <button type="submit" class="btn btn-primary" data-testid="add-teacher-submit">Add User</button>
       </form>
     </div>
   </div>
@@ -3222,42 +3236,97 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
     }
     
     function applyRoleRestrictions(userInfo) {
-      const isAdmin = userInfo.role === 'admin';
+      const role = userInfo.role || 'unauthorized';
+      const isAdmin     = role === 'admin';
+      const isPrincipal = role === 'principal';
+      const isWingAdmin = role === 'wing_admin';
+      const isTeacher   = role === 'teacher';
       
-      // Hide admin-only menu items for teachers
-      const adminOnlyItems = [
+      // Wing Admin gets near-admin UI; Principal gets full read but disabled writes; Teacher hides admin UI.
+      const adminLikeUI  = isAdmin || isWingAdmin || isPrincipal;
+      const writableRole = isAdmin || isWingAdmin;
+      
+      // Pages that mutate data — hide for plain teacher
+      const writeOnlyPages = [
         'students', 'teachers', 'subjects', 'create-exam', 'lock-exam', 
         'grade-ranges', 'school-info', 'bulk-students', 'bulk-teachers', 
         'bulk-marks', 'report-cards', 'promote-students', 'archive-data'
       ];
+      // Pages that are admin-only school-wide (wing_admin/principal cannot use)
+      const adminOnlyPages = ['teachers', 'bulk-teachers', 'lock-exam', 'grade-ranges',
+                              'school-info', 'promote-students', 'archive-data'];
       
-      // Hide admin-only sections
+      // 1) Admin-only sections
       document.querySelectorAll('.admin-only-section').forEach(section => {
         section.style.display = isAdmin ? 'block' : 'none';
       });
       
-      // Hide report cards for teachers
-      if (!isAdmin) {
+      // 2) Hide write-only pages from plain teachers
+      if (isTeacher) {
+        writeOnlyPages.forEach(page => {
+          const navItem = document.querySelector(`[data-page="${page}"]`);
+          if (navItem) navItem.style.display = 'none';
+        });
         const reportCardsNav = document.querySelector('[data-page="report-cards"]');
         if (reportCardsNav) reportCardsNav.style.display = 'none';
-        
-        adminOnlyItems.forEach(page => {
+        // Plain teachers shouldn't see audit-log, trash, or system-admin
+        ['audit-log', 'trash', 'system-admin', 'manage-sheets', 'download-marks'].forEach(page => {
           const navItem = document.querySelector(`[data-page="${page}"]`);
-          if (navItem) {
-            navItem.style.display = 'none';
-          }
+          if (navItem) navItem.style.display = 'none';
         });
-        
-        // Update header to show role
-        document.getElementById('userName').textContent = 
-          `${userInfo.name} (Teacher)`;
-      } else {
-        document.getElementById('userName').textContent = 
-          `${userInfo.name} (Admin)`;
       }
       
-      // Store role globally
-      window.currentUserRole = userInfo.role;
+      // 3) Hide system-admin / manage-sheets from wing_admin and principal (school-wide settings)
+      if (isWingAdmin || isPrincipal) {
+        ['system-admin', 'manage-sheets'].forEach(page => {
+          const navItem = document.querySelector(`[data-page="${page}"]`);
+          if (navItem) navItem.style.display = 'none';
+        });
+      }
+      
+      // 3) Hide admin-only school-wide pages from wing_admin and principal
+      if (isWingAdmin || isPrincipal) {
+        adminOnlyPages.forEach(page => {
+          const navItem = document.querySelector(`[data-page="${page}"]`);
+          if (navItem) navItem.style.display = 'none';
+        });
+      }
+      
+      // 4) Principal: read-only mode — disable all action buttons globally
+      if (isPrincipal) {
+        document.body.classList.add('readonly-mode');
+        // Inject minimal CSS once
+        if (!document.getElementById('readonly-style')) {
+          const style = document.createElement('style');
+          style.id = 'readonly-style';
+          style.textContent = `
+            body.readonly-mode .btn-primary,
+            body.readonly-mode .btn-danger,
+            body.readonly-mode button[type="submit"]:not(.btn-secondary):not(.no-readonly),
+            body.readonly-mode .action-write {
+              opacity: 0.45; pointer-events: none; cursor: not-allowed;
+            }
+            body.readonly-mode .readonly-badge { display: inline-block; }
+          `;
+          document.head.appendChild(style);
+        }
+      }
+      
+      // 5) Header role label
+      const roleLabel = isAdmin     ? 'Admin'
+                      : isPrincipal ? 'Principal (Read-only)'
+                      : isWingAdmin ? `Wing Admin${userInfo.wing ? ' — ' + userInfo.wing + ' Wing' : ''}`
+                      : isTeacher   ? 'Teacher'
+                      : 'Guest';
+      const userNameEl = document.getElementById('userName');
+      if (userNameEl) userNameEl.textContent = `${userInfo.name} (${roleLabel})`;
+      
+      // Store globals for downstream code
+      window.currentUserRole = role;
+      window.currentUserInfo = userInfo;
+      window.canWriteUI = writableRole;
+      window.isReadOnly  = isPrincipal;
+      void adminLikeUI;
     }
     
     function loadKPIs() {
@@ -3278,7 +3347,7 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
           document.getElementById('kpiAbove80').textContent = data.rangeAbove80 + '%';
           
           // Show data scope indicator
-          if (data.dataScope && data.userRole === 'teacher') {
+          if (data.dataScope && data.userRole && data.userRole !== 'admin') {
             const scopeDiv = document.createElement('div');
             scopeDiv.className = 'data-scope-indicator';
             scopeDiv.innerHTML = `<small style="color: var(--text-secondary);">Showing: ${data.dataScope} | Year: ${data.academicYear}</small>`;
@@ -3532,16 +3601,25 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
         .withSuccessHandler(function(data) {
           const tbody = document.getElementById('teachersBody');
           if (data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No teachers found</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No teachers found</td></tr>';
             return;
           }
+          const roleBadge = (r) => {
+            const role = String(r || 'TEACHER').toUpperCase();
+            const cls = role === 'ADMIN' ? 'badge-danger'
+                      : role === 'PRINCIPAL' ? 'badge-warning'
+                      : role === 'WING_ADMIN' ? 'badge-info'
+                      : 'badge-success';
+            return `<span class="badge ${cls}" data-testid="teacher-role-badge">${role.replace('_',' ')}</span>`;
+          };
           tbody.innerHTML = data.map(t => `
-            <tr>
+            <tr data-testid="teacher-row-${t.teacherId}">
               <td>${t.teacherId}</td>
               <td>${t.name}</td>
-              <td>${t.subject}</td>
-              <td>${t.classes}</td>
+              <td>${t.subject || '-'}</td>
+              <td>${t.classes || '-'}</td>
               <td>${t.email}</td>
+              <td>${roleBadge(t.role)}</td>
               <td><span class="badge ${t.status === 'Active' ? 'badge-success' : 'badge-danger'}">${t.status}</span></td>
             </tr>
           `).join('');
@@ -3977,7 +4055,8 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
         email: document.getElementById('newTeacherEmail').value,
         subject: document.getElementById('newTeacherSubject').value,
         classes: document.getElementById('newTeacherClasses').value,
-        sections: document.getElementById('newTeacherSections').value
+        sections: document.getElementById('newTeacherSections').value,
+        role: (document.getElementById('newTeacherRole') || {}).value || 'TEACHER'
       };
       
       google.script.run
