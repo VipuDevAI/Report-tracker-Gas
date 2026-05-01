@@ -27,6 +27,55 @@ function _denyIfNoStudentWrite(cls) {
 }
 
 /**
+ * Internal: assert the current user can write to a teacher row.
+ *
+ * Admin → any role, any classes.
+ * Wing Admin → only role === "TEACHER" AND every class in `targetClasses`
+ *              is within their wing's classes. Cannot create/edit other admins.
+ * Principal/Teacher → denied.
+ *
+ * @param {string} targetRole - Desired Role value for the row (uppercase)
+ * @param {string|Array} targetClasses - Comma-separated string OR array of class numbers
+ * @returns {Object|null} null if allowed, else { success:false, message }
+ */
+function _denyIfNoTeacherWrite(targetRole, targetClasses) {
+  const role = getRole();
+  if (role === "admin") return null;
+  if (role !== "wing_admin") {
+    return { success: false, message: "Access denied. Insufficient privileges." };
+  }
+  
+  // Wing Admin may only write rows whose role is TEACHER
+  const r = String(targetRole || "TEACHER").toUpperCase();
+  if (r !== "TEACHER") {
+    return { success: false, message: "Access denied. Wing Admins can only manage teachers (not admins/principals/wing-admins)." };
+  }
+  
+  // Every target class must be within the wing
+  const wa = getWingAdminAssignment();
+  if (!wa || !wa.classes.length) {
+    return { success: false, message: "Your wing assignment is empty. Contact admin." };
+  }
+  const wingSet = new Set(wa.classes.map(String));
+  
+  const arr = Array.isArray(targetClasses)
+    ? targetClasses
+    : String(targetClasses || "").split(/[,;|]/);
+  const tokens = arr.map(x => String(x).trim()).filter(x => x);
+  
+  // Empty classes are allowed (e.g., school-wide read-only teacher) — only restrict non-empty
+  if (tokens.length === 0) return null;
+  
+  for (let i = 0; i < tokens.length; i++) {
+    if (!wingSet.has(tokens[i])) {
+      return { success: false, message: `Access denied. Class "${tokens[i]}" is outside your wing scope.` };
+    }
+  }
+  return null;
+}
+
+
+/**
  * Bulk upload students from CSV/array data
  * @param {Array} data - 2D array of student data
  * @param {Object} options - { updateExisting: boolean, preview: boolean }
@@ -717,26 +766,15 @@ function replaceTeachers(data) {
  * @returns {Object} Result object
  */
 function addTeacher(teacher) {
-  if (!isAdmin()) {
-    return { success: false, message: "Access denied. Admin privileges required." };
-  }
-  
   if (!teacher || !teacher.name) {
     return { success: false, message: "Name is required." };
   }
-  
   if (!teacher.email) {
-    return { success: false, message: "Email is required (used for Google login)." };
+    return { success: false, message: "Email is required (used for login)." };
   }
   
   // Idempotent migration for the Role column
   try { ensureTeachersRoleColumn(); } catch (e) {}
-  
-  // Check if email already exists
-  const existingTeacher = getTeacherByEmail(teacher.email);
-  if (existingTeacher) {
-    return { success: false, message: "A teacher with this email already exists." };
-  }
   
   // Normalize role
   const validRoles = ["ADMIN", "PRINCIPAL", "WING_ADMIN", "TEACHER"];
@@ -748,6 +786,16 @@ function addTeacher(teacher) {
   const splitNorm = (s) => String(s || "").split(/[,;|]/).map(x => x.trim()).filter(x => x).join(",");
   const classes = splitNorm(teacher.classes);
   const sections = splitNorm(teacher.sections);
+  
+  // Role/scope gate (admin: any; wing_admin: only TEACHER within wing classes)
+  const denied = _denyIfNoTeacherWrite(role, classes);
+  if (denied) return denied;
+  
+  // Check if email already exists
+  const existingTeacher = getTeacherByEmail(teacher.email);
+  if (existingTeacher) {
+    return { success: false, message: "A user with this email already exists." };
+  }
   
   const sheet = SpreadsheetApp.getActive().getSheetByName("Teachers");
   const teacherId = `TCH${Date.now()}`;
@@ -768,13 +816,229 @@ function addTeacher(teacher) {
     role     // Role
   ]);
   
-  logAction("Add Teacher", `Added teacher: ${teacher.name} (${teacher.email}) [${role}]`);
+  try { writeAudit("CREATE_TEACHER", "Teacher", teacherId, "*", "", `${teacher.name} (${role})`, { email: teacher.email, classes, sections }); } catch (e) {}
+  logAction("Add Teacher", `Added: ${teacher.name} (${teacher.email}) [${role}]`);
   
   return { 
     success: true, 
     message: `${role.replace('_',' ').toLowerCase()} added successfully! They can now login with their email & password.`,
     teacherId: teacherId
   };
+}
+
+
+/**
+ * Update teacher row by email (Admin or Wing Admin within scope).
+ *
+ * Wing Admin restrictions:
+ *   - Cannot change `email` (identity, used for login)
+ *   - Cannot change `role`
+ *   - Existing AND target classes must both be entirely within their wing
+ *   - Target row's role must remain TEACHER
+ *
+ * @param {string} email - The login email of the teacher to update
+ * @param {Object} updates - Fields to change: name, subject, classes, sections, phone, status, role (admin only)
+ * @returns {Object} { success, message }
+ */
+function updateTeacher(email, updates) {
+  if (!email) return { success: false, message: "Email is required." };
+  if (!updates || typeof updates !== "object") return { success: false, message: "No updates provided." };
+  
+  try { ensureTeachersRoleColumn(); } catch (e) {}
+  
+  const role = getRole();
+  if (role !== "admin" && role !== "wing_admin") {
+    return { success: false, message: "Access denied. Insufficient privileges." };
+  }
+  
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(15000);
+    
+    const sheet = SpreadsheetApp.getActive().getSheetByName("Teachers");
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return { success: false, message: "Teacher not found." };
+    
+    const data = sheet.getRange(2, 1, lastRow - 1, 13).getValues();
+    const emailLower = String(email).trim().toLowerCase();
+    let foundIdx = -1;
+    for (let i = 0; i < data.length; i++) {
+      if (String(data[i][5] || "").trim().toLowerCase() === emailLower && data[i][11] !== true) {
+        foundIdx = i; break;
+      }
+    }
+    if (foundIdx === -1) return { success: false, message: "Teacher not found." };
+    
+    const row = data[foundIdx];
+    const currentRole = String(row[12] || "TEACHER").toUpperCase();
+    const currentClasses = String(row[3] || "");
+    
+    // Wing Admin: lock down email + role; enforce wing scope on current AND target classes
+    let newRole = currentRole;
+    if (updates.role !== undefined) {
+      if (role !== "admin") {
+        // silently ignore role escalation attempts
+      } else {
+        const r = String(updates.role).trim().toUpperCase().replace("WINGADMIN", "WING_ADMIN");
+        if (["ADMIN", "PRINCIPAL", "WING_ADMIN", "TEACHER"].indexOf(r) >= 0) newRole = r;
+      }
+    }
+    
+    let newEmail = row[5];
+    if (updates.email !== undefined && role === "admin") {
+      newEmail = String(updates.email).trim();
+    }
+    
+    const splitNorm = (s) => String(s || "").split(/[,;|]/).map(x => x.trim()).filter(x => x).join(",");
+    const newClasses  = updates.classes  !== undefined ? splitNorm(updates.classes)  : currentClasses;
+    const newSections = updates.sections !== undefined ? splitNorm(updates.sections) : String(row[4] || "");
+    
+    // Scope check: current must be writeable, target must be writeable
+    let denied = _denyIfNoTeacherWrite(currentRole, currentClasses);
+    if (denied) return denied;
+    denied = _denyIfNoTeacherWrite(newRole, newClasses);
+    if (denied) return denied;
+    
+    const updatedRow = [
+      row[0],                                            // TeacherID (immutable)
+      updates.name !== undefined ? updates.name : row[1],
+      updates.subject !== undefined ? updates.subject : row[2],
+      newClasses,
+      newSections,
+      newEmail,
+      updates.phone !== undefined ? updates.phone : row[6],
+      row[7],                                            // JoinDate (immutable)
+      updates.status !== undefined ? updates.status : (row[8] || "Active"),
+      row[9],                                            // IsClassTeacher (managed elsewhere)
+      row[10],                                           // ClassTeacherOf
+      false,                                             // IsDeleted
+      newRole
+    ];
+    
+    sheet.getRange(foundIdx + 2, 1, 1, 13).setValues([updatedRow]);
+    
+    try { writeAudit("UPDATE_TEACHER", "Teacher", row[0], "*", JSON.stringify({ email: row[5], role: currentRole, classes: currentClasses }), JSON.stringify({ email: newEmail, role: newRole, classes: newClasses }), {}); } catch (e) {}
+    logAction("Update Teacher", `Updated: ${row[5]}`);
+    
+    return { success: true, message: "Teacher updated successfully." };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+
+/**
+ * Soft-delete a teacher (sets IsDeleted=true). Marks history is preserved.
+ * Wing Admin: only TEACHER rows whose classes are entirely within their wing.
+ * Admin: any.
+ *
+ * @param {string} email
+ * @returns {Object} { success, message }
+ */
+function deleteTeacher(email) {
+  if (!email) return { success: false, message: "Email is required." };
+  
+  try { ensureTeachersRoleColumn(); } catch (e) {}
+  
+  const role = getRole();
+  if (role !== "admin" && role !== "wing_admin") {
+    return { success: false, message: "Access denied. Insufficient privileges." };
+  }
+  
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(15000);
+    
+    const sheet = SpreadsheetApp.getActive().getSheetByName("Teachers");
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return { success: false, message: "Teacher not found." };
+    
+    const data = sheet.getRange(2, 1, lastRow - 1, 13).getValues();
+    const emailLower = String(email).trim().toLowerCase();
+    let foundIdx = -1;
+    for (let i = 0; i < data.length; i++) {
+      if (String(data[i][5] || "").trim().toLowerCase() === emailLower && data[i][11] !== true) {
+        foundIdx = i; break;
+      }
+    }
+    if (foundIdx === -1) return { success: false, message: "Teacher not found or already deleted." };
+    
+    const row = data[foundIdx];
+    const currentRole = String(row[12] || "TEACHER").toUpperCase();
+    const currentClasses = String(row[3] || "");
+    
+    // Safety: prevent admin from deleting the LAST admin
+    if (currentRole === "ADMIN") {
+      // Count remaining ADMIN rows (non-deleted)
+      let adminCount = 0;
+      for (let i = 0; i < data.length; i++) {
+        const r = String(data[i][12] || "TEACHER").toUpperCase();
+        if (r === "ADMIN" && data[i][11] !== true) adminCount++;
+      }
+      if (adminCount <= 1) {
+        return { success: false, message: "Cannot delete the last remaining ADMIN. Add another admin first." };
+      }
+    }
+    
+    // Scope check
+    const denied = _denyIfNoTeacherWrite(currentRole, currentClasses);
+    if (denied) return denied;
+    
+    // Soft-delete (col L = IsDeleted, idx 12 in 1-indexed → column 12)
+    sheet.getRange(foundIdx + 2, 12).setValue(true);
+    
+    // Invalidate any active session in Auth sheet (best-effort, non-fatal)
+    try {
+      const authSheet = SpreadsheetApp.getActive().getSheetByName("Auth");
+      if (authSheet && authSheet.getLastRow() > 1) {
+        const auth = authSheet.getRange(2, 1, authSheet.getLastRow() - 1, 9).getValues();
+        for (let i = 0; i < auth.length; i++) {
+          if (String(auth[i][0] || "").trim().toLowerCase() === emailLower) {
+            authSheet.getRange(i + 2, 5).setValue(""); // SessionToken
+            authSheet.getRange(i + 2, 6).setValue(""); // SessionExpiry
+            break;
+          }
+        }
+      }
+    } catch (e) {}
+    
+    try { writeAudit("DELETE_TEACHER", "Teacher", row[0], "IsDeleted", "false", "true", { email: row[5], role: currentRole }); } catch (e) {}
+    logAction("Delete Teacher", `Soft-deleted: ${row[5]} (marks preserved)`);
+    
+    return { success: true, message: "Teacher removed. Their marks history is preserved." };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+
+/**
+ * Restore a soft-deleted teacher (Admin only — wing admins can't see deleted rows).
+ * @param {string} email
+ */
+function restoreTeacher(email) {
+  if (!isAdmin()) return { success: false, message: "Access denied. Admin only." };
+  if (!email) return { success: false, message: "Email is required." };
+  
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(15000);
+    const sheet = SpreadsheetApp.getActive().getSheetByName("Teachers");
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return { success: false, message: "Teacher not found." };
+    const data = sheet.getRange(2, 1, lastRow - 1, 13).getValues();
+    const emailLower = String(email).trim().toLowerCase();
+    for (let i = 0; i < data.length; i++) {
+      if (String(data[i][5] || "").trim().toLowerCase() === emailLower && data[i][11] === true) {
+        sheet.getRange(i + 2, 12).setValue(false);
+        try { writeAudit("RESTORE_TEACHER", "Teacher", data[i][0], "IsDeleted", "true", "false", {}); } catch (e) {}
+        return { success: true, message: "Teacher restored." };
+      }
+    }
+    return { success: false, message: "Teacher not found in trash." };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
 }
 
 

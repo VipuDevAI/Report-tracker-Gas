@@ -200,6 +200,77 @@
       font-size: 16px;
     }
     
+    /* Next Step hero card (onboarding) */
+    .next-step-hero {
+      background: linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%);
+      border: 1px solid rgba(16, 185, 129, 0.18);
+      border-radius: 20px;
+      padding: 28px 32px;
+      margin-bottom: 24px;
+      box-shadow: var(--shadow-lg);
+      position: relative;
+      overflow: hidden;
+    }
+    .next-step-hero::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px;
+      background: linear-gradient(90deg, var(--primary) 0%, var(--accent) 50%, var(--gold) 100%);
+    }
+    .next-step-hero.complete {
+      background: #ecfdf5;
+      padding: 14px 20px;
+    }
+    .next-step-hero .ns-headline {
+      font-size: 22px; font-weight: 700; color: var(--text-primary); margin: 0 0 4px;
+    }
+    .next-step-hero .ns-subline {
+      font-size: 14px; color: var(--text-secondary); margin: 0 0 18px;
+    }
+    .next-step-hero.complete .ns-headline { font-size: 16px; margin: 0; }
+    .next-step-hero.complete .ns-subline  { display: none; }
+    .next-step-hero .ns-row {
+      display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    }
+    .next-step-hero .ns-cta {
+      background: var(--primary); color: white; border: none; padding: 12px 22px;
+      border-radius: 10px; font-weight: 600; font-size: 14px; cursor: pointer;
+      transition: all 0.2s; box-shadow: 0 4px 12px rgba(16,185,129,0.25);
+    }
+    .next-step-hero .ns-cta:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(16,185,129,0.35); }
+    .next-step-hero .ns-steps {
+      display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px;
+    }
+    .next-step-hero .ns-step {
+      flex: 1 1 180px; min-width: 180px;
+      background: white; border: 1px solid #e5e7eb; border-radius: 12px;
+      padding: 12px 14px; display: flex; align-items: center; gap: 10px;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .next-step-hero .ns-step:hover {
+      border-color: var(--primary); transform: translateY(-2px);
+      box-shadow: 0 4px 10px rgba(16,185,129,0.15);
+    }
+    .next-step-hero .ns-step.done {
+      background: #ecfdf5; border-color: #a7f3d0;
+    }
+    .next-step-hero .ns-step .ns-step-icon {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: #f3f4f6; color: var(--text-secondary);
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 13px; flex-shrink: 0;
+    }
+    .next-step-hero .ns-step.done .ns-step-icon {
+      background: var(--primary); color: white;
+    }
+    .next-step-hero .ns-step .ns-step-body { flex: 1; min-width: 0; }
+    .next-step-hero .ns-step .ns-step-label {
+      font-size: 13px; font-weight: 600; color: var(--text-primary);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .next-step-hero .ns-step .ns-step-meta {
+      font-size: 11px; color: var(--text-secondary); margin-top: 2px;
+    }
+    .next-step-hero .ns-step.done .ns-step-meta { color: #059669; }
+    
     /* KPI Cards - Stunning Design */
     .kpi-grid {
       display: grid;
@@ -366,6 +437,11 @@
     .btn-danger {
       background: var(--danger);
       color: white;
+    }
+    .btn-sm {
+      padding: 6px 12px;
+      font-size: 12px;
+      border-radius: 6px;
     }
     
     /* Charts Grid */
@@ -1343,7 +1419,10 @@
       <div id="perfWarningContainer"></div>
       <div id="aggregatesBanner"></div>
       
-      <!-- KPI Cards -->
+      <!-- Next Step hero card (role-aware onboarding) -->
+      <div id="nextStepCard" class="next-step-hero" data-testid="next-step-hero" style="display:none;"></div>
+      
+      <!-- KPI Cards (demoted: shown after hero card) -->
       <div class="kpi-grid" id="kpiGrid">
         <div class="kpi-card">
           <div class="kpi-label">Lowest Performing Subject</div>
@@ -1610,10 +1689,11 @@
               <th>Email</th>
               <th>Role</th>
               <th>Status</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="teachersBody">
-            <tr><td colspan="7" class="loading"><div class="spinner"></div></td></tr>
+            <tr><td colspan="8" class="loading"><div class="spinner"></div></td></tr>
           </tbody>
         </table>
       </div>
@@ -3118,6 +3198,7 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
     function initializeDashboard() {
       loadUserInfo();
       updateSidebarUserInfo();
+      loadNextSteps();
       loadKPIs();
       loadFilters();
       initCharts();
@@ -3125,6 +3206,82 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
       loadWeakStudents();
       loadPerfWarning();
       loadAggregatesBanner();
+    }
+    
+    // ── NEXT STEP HERO ────────────────────────────────────────────────────
+    function loadNextSteps() {
+      const card = document.getElementById('nextStepCard');
+      if (!card) return;
+      google.script.run
+        .withSuccessHandler(function(ns) {
+          renderNextStepCard(ns);
+        })
+        .withFailureHandler(function() {
+          card.style.display = 'none';
+        })
+        .getNextSteps();
+    }
+    
+    function renderNextStepCard(ns) {
+      const card = document.getElementById('nextStepCard');
+      if (!card || !ns) return;
+      
+      // Show only if there's something meaningful to render
+      if (!ns.headline) { card.style.display = 'none'; return; }
+      
+      const collapsed = ns.allDone === true;
+      card.classList.toggle('complete', collapsed);
+      
+      const escapeHtml = (s) => String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      
+      const ctaBtn = ns.primary
+        ? `<button class="ns-cta" data-testid="ns-primary-cta"
+              onclick='handleNextStepCTA(${JSON.stringify(ns.primary).replace(/'/g, "&#39;")})'>${escapeHtml(ns.primary.ctaLabel)}</button>`
+        : '';
+      
+      let stepsHtml = '';
+      if (!collapsed && Array.isArray(ns.steps) && ns.steps.length) {
+        stepsHtml = '<div class="ns-steps">' + ns.steps.map((s, i) => {
+          const meta = s.done ? 'Done'
+                     : (typeof s.count === 'number' && s.count > 0)
+                        ? `${s.count} pending`
+                        : (s.ctaLabel || '');
+          const stepCta = { ctaPage: s.ctaPage, ctaLabel: s.ctaLabel, context: s.context || null };
+          const onclick = `handleNextStepCTA(${JSON.stringify(stepCta).replace(/'/g, "&#39;")})`;
+          return `<div class="ns-step ${s.done ? 'done' : ''}"
+                       data-testid="ns-step-${escapeHtml(s.key)}"
+                       onclick='${onclick}'>
+                    <div class="ns-step-icon">${s.done ? '✓' : (i + 1)}</div>
+                    <div class="ns-step-body">
+                      <div class="ns-step-label">${escapeHtml(s.label)}</div>
+                      <div class="ns-step-meta">${escapeHtml(meta)}</div>
+                    </div>
+                  </div>`;
+        }).join('') + '</div>';
+      }
+      
+      card.innerHTML = `
+        <div class="ns-row">
+          <div style="flex:1; min-width: 0;">
+            <h2 class="ns-headline">${escapeHtml(ns.headline)}</h2>
+            <p class="ns-subline">${escapeHtml(ns.subline || '')}</p>
+          </div>
+          ${ctaBtn}
+        </div>
+        ${stepsHtml}
+      `;
+      card.style.display = 'block';
+    }
+    
+    /**
+     * Handle CTA click from Next Step hero card.
+     * Pre-selects context (class/section/exam/subject) on the destination page.
+     */
+    function handleNextStepCTA(payload) {
+      if (!payload || !payload.ctaPage) return;
+      window._nextStepContext = payload.context || null;
+      showPage(payload.ctaPage);
     }
     
     function loadPerfWarning() {
@@ -3252,8 +3409,9 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
         'grade-ranges', 'school-info', 'bulk-students', 'bulk-teachers', 
         'bulk-marks', 'report-cards', 'promote-students', 'archive-data'
       ];
-      // Pages that are admin-only school-wide (wing_admin/principal cannot use)
-      const adminOnlyPages = ['teachers', 'bulk-teachers', 'lock-exam', 'grade-ranges',
+      // Pages that are admin-only school-wide (wing_admin & principal cannot use).
+      // Wing Admin CAN now manage teachers within their wing — keep "teachers" off this list.
+      const adminOnlyPages = ['bulk-teachers', 'lock-exam', 'grade-ranges',
                               'school-info', 'promote-students', 'archive-data'];
       
       // 1) Admin-only sections
@@ -3284,7 +3442,13 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
         });
       }
       
-      // 3) Hide admin-only school-wide pages from wing_admin and principal
+      // Principal: hide Teachers nav (read-only — no user management)
+      if (isPrincipal) {
+        const t = document.querySelector('[data-page="teachers"]');
+        if (t) t.style.display = 'none';
+      }
+      
+      // 4) Hide admin-only school-wide pages from wing_admin and principal
       if (isWingAdmin || isPrincipal) {
         adminOnlyPages.forEach(page => {
           const navItem = document.querySelector(`[data-page="${page}"]`);
@@ -3597,22 +3761,42 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
     }
     
     function loadTeachers() {
+      const role = window.currentUserRole || 'admin';
+      // Hide Role dropdown for wing admin (they can only create TEACHER)
+      const roleSel = document.getElementById('newTeacherRole');
+      const roleGroup = roleSel ? roleSel.closest('.form-group') : null;
+      if (roleGroup) {
+        if (role === 'wing_admin') {
+          roleGroup.style.display = 'none';
+          roleSel.value = 'TEACHER';
+        } else {
+          roleGroup.style.display = '';
+        }
+      }
+      
       google.script.run
         .withSuccessHandler(function(data) {
           const tbody = document.getElementById('teachersBody');
           if (data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No teachers found</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No teachers found</td></tr>';
             return;
           }
           const roleBadge = (r) => {
-            const role = String(r || 'TEACHER').toUpperCase();
-            const cls = role === 'ADMIN' ? 'badge-danger'
-                      : role === 'PRINCIPAL' ? 'badge-warning'
-                      : role === 'WING_ADMIN' ? 'badge-info'
+            const rUp = String(r || 'TEACHER').toUpperCase();
+            const cls = rUp === 'ADMIN' ? 'badge-danger'
+                      : rUp === 'PRINCIPAL' ? 'badge-warning'
+                      : rUp === 'WING_ADMIN' ? 'badge-info'
                       : 'badge-success';
-            return `<span class="badge ${cls}" data-testid="teacher-role-badge">${role.replace('_',' ')}</span>`;
+            return `<span class="badge ${cls}" data-testid="teacher-role-badge">${rUp.replace('_',' ')}</span>`;
           };
-          tbody.innerHTML = data.map(t => `
+          const canEdit = (role === 'admin' || role === 'wing_admin');
+          tbody.innerHTML = data.map(t => {
+            const escEmail = String(t.email || '').replace(/'/g, "\\'");
+            const actions = canEdit ? `
+              <button class="btn btn-sm btn-secondary" onclick="showEditTeacherModal('${escEmail}')" data-testid="edit-teacher-${t.teacherId}">Edit</button>
+              <button class="btn btn-sm btn-danger" onclick="confirmDeleteTeacher('${escEmail}','${String(t.name||'').replace(/'/g,"\\'")}')" data-testid="delete-teacher-${t.teacherId}" style="margin-left:6px;">Delete</button>
+            ` : '';
+            return `
             <tr data-testid="teacher-row-${t.teacherId}">
               <td>${t.teacherId}</td>
               <td>${t.name}</td>
@@ -3621,10 +3805,51 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
               <td>${t.email}</td>
               <td>${roleBadge(t.role)}</td>
               <td><span class="badge ${t.status === 'Active' ? 'badge-success' : 'badge-danger'}">${t.status}</span></td>
+              <td>${actions}</td>
             </tr>
-          `).join('');
+          `;}).join('');
         })
         .getTeachers();
+    }
+    
+    /**
+     * Open the Add Teacher modal in EDIT mode for the given email.
+     * Reuses the same DOM, but stores the original email on the form so submit
+     * can route to updateTeacher instead of addTeacher.
+     */
+    function showEditTeacherModal(email) {
+      google.script.run
+        .withSuccessHandler(function(list) {
+          const t = (list || []).find(x => String(x.email).toLowerCase() === String(email).toLowerCase());
+          if (!t) { alert('Teacher not found.'); return; }
+          document.getElementById('newTeacherName').value     = t.name || '';
+          document.getElementById('newTeacherEmail').value    = t.email || '';
+          document.getElementById('newTeacherEmail').readOnly = true; // identity locked during edit
+          document.getElementById('newTeacherSubject').value  = t.subject || '';
+          document.getElementById('newTeacherClasses').value  = t.classes || '';
+          document.getElementById('newTeacherSections').value = t.sections || '';
+          const roleSel = document.getElementById('newTeacherRole');
+          if (roleSel) roleSel.value = String(t.role || 'TEACHER').toUpperCase();
+          
+          const form = document.getElementById('addTeacherForm');
+          form.dataset.editEmail = t.email;
+          // Update title + button label
+          document.querySelector('#addTeacherModal .modal-title').textContent = 'Edit User';
+          form.querySelector('button[type="submit"]').textContent = 'Save Changes';
+          
+          document.getElementById('addTeacherModal').classList.add('active');
+        })
+        .getTeachers();
+    }
+    
+    function confirmDeleteTeacher(email, name) {
+      if (!confirm(`Delete user "${name || email}"? Their marks history will be preserved.`)) return;
+      google.script.run
+        .withSuccessHandler(function(result) {
+          alert(result.message);
+          if (result.success) loadTeachers();
+        })
+        .deleteTeacher(email);
     }
     
     function loadSubjects() {
@@ -3652,6 +3877,64 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
     
     function loadMarksPage() {
       loadExamDropdowns();
+      
+      // Auto-fill subject for teachers (their assignment dictates) — also for wing admins/admins,
+      // we keep "All" selectable so they can pick any subject.
+      _maybeAutofillTeacherSubject();
+      
+      // Apply pre-selected context from a Hero CTA click (class/section/exam/subject)
+      _applyMarksContextIfAny();
+    }
+    
+    function _maybeAutofillTeacherSubject() {
+      const subjSel = document.getElementById('marksSubject');
+      if (!subjSel) return;
+      const info = window.currentUserInfo || {};
+      
+      // Only auto-fill for teachers with a specific subject assignment
+      if (info.role !== 'teacher' || !info.subject || info.subject === 'All') return;
+      
+      // Make sure the option exists, then select & lock the dropdown
+      let opt = Array.from(subjSel.options).find(o => o.value === info.subject);
+      if (!opt) {
+        const o = document.createElement('option');
+        o.value = info.subject;
+        o.textContent = info.subject;
+        subjSel.appendChild(o);
+      }
+      subjSel.value = info.subject;
+      subjSel.disabled = true;
+      subjSel.setAttribute('data-locked-by-role', '1');
+    }
+    
+    function _applyMarksContextIfAny() {
+      const ctx = window._nextStepContext;
+      if (!ctx) return;
+      window._nextStepContext = null; // consume once
+      
+      const setIfPresent = (id, val) => {
+        if (val === undefined || val === null || val === '') return false;
+        const el = document.getElementById(id);
+        if (!el) return false;
+        // Wait until dropdown options are populated; if not, retry shortly
+        const tryApply = (attemptsLeft) => {
+          const opt = Array.from(el.options || []).find(o => String(o.value) === String(val));
+          if (opt) {
+            el.value = String(val);
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            return;
+          }
+          if (attemptsLeft > 0) setTimeout(() => tryApply(attemptsLeft - 1), 250);
+        };
+        tryApply(8); // up to ~2s for options to load
+        return true;
+      };
+      
+      setIfPresent('marksExam',    ctx.examId);
+      setIfPresent('marksClass',   ctx.class);
+      // section depends on class — applies a moment later via the class-change handler
+      if (ctx.section) setTimeout(() => setIfPresent('marksSection', ctx.section), 350);
+      if (ctx.subject) setTimeout(() => setIfPresent('marksSubject', ctx.subject), 450);
     }
     
     function loadExamDropdowns() {
@@ -4050,6 +4333,9 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
     function handleAddTeacher(e) {
       e.preventDefault();
       
+      const form = document.getElementById('addTeacherForm');
+      const editEmail = form.dataset.editEmail || '';
+      
       const teacher = {
         name: document.getElementById('newTeacherName').value,
         email: document.getElementById('newTeacherEmail').value,
@@ -4059,15 +4345,33 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
         role: (document.getElementById('newTeacherRole') || {}).value || 'TEACHER'
       };
       
-      google.script.run
-        .withSuccessHandler(function(result) {
-          alert(result.message);
-          if (result.success) {
-            closeModal('addTeacherModal');
-            loadTeachers();
-          }
-        })
-        .addTeacher(teacher);
+      const onDone = function(result) {
+        alert(result.message);
+        if (result.success) {
+          closeModal('addTeacherModal');
+          _resetAddTeacherForm();
+          loadTeachers();
+        }
+      };
+      
+      if (editEmail) {
+        google.script.run.withSuccessHandler(onDone).updateTeacher(editEmail, teacher);
+      } else {
+        google.script.run.withSuccessHandler(onDone).addTeacher(teacher);
+      }
+    }
+    
+    function _resetAddTeacherForm() {
+      const form = document.getElementById('addTeacherForm');
+      if (!form) return;
+      form.reset();
+      delete form.dataset.editEmail;
+      const emailEl = document.getElementById('newTeacherEmail');
+      if (emailEl) emailEl.readOnly = false;
+      const title = document.querySelector('#addTeacherModal .modal-title');
+      if (title) title.textContent = 'Add Teacher';
+      const btn = form.querySelector('button[type="submit"]');
+      if (btn) btn.textContent = 'Add User';
     }
     
     function handleSaveSchoolInfo(e) {
@@ -4082,6 +4386,7 @@ STU1234567891,Mathematics,EXM1234567890,78"></textarea>
     }
     
     function showAddTeacherModal() {
+      _resetAddTeacherForm();
       document.getElementById('addTeacherModal').classList.add('active');
     }
     

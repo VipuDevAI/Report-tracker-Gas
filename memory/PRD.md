@@ -142,6 +142,27 @@ See `/app/memory/test_credentials.md`. Admin emails: `rishisans83@gmail.com`, `m
 - Multi-year analytics across Archive sheets
 
 ## Changelog
+### Feb 2026 — Wing Admin Teacher Management + Guided Dashboard
+- **Backend (Wing Admin user mgmt):**
+  - New gate `_denyIfNoTeacherWrite(targetRole, targetClasses)` in `2_DataUpload.gs` — admin: any; wing_admin: only `Role===TEACHER` AND every target class within wing.
+  - `addTeacher` opened to wing_admin (TEACHER-only, in-wing classes).
+  - New `updateTeacher(email, updates)` — wing_admin cannot change `email` or `role` (silently ignored); enforces wing scope on current AND target classes.
+  - New `deleteTeacher(email)` — soft-delete via `IsDeleted`, marks history preserved, refuses to delete the last remaining ADMIN, invalidates active session.
+  - New `restoreTeacher(email)` — admin-only.
+- **Backend (Onboarding):**
+  - New file `8_Onboarding.gs` with `getNextSteps()` returning role-aware checklist.
+  - Admin: 5-step setup checklist (Teachers→Students→Exam→Marks→Reports) using existing sheet counts.
+  - Wing Admin: top 5 unlocked exams in wing with pending-students count.
+  - Teacher: top 5 active exams in their assignment with their personal pending-students count (filtered by `subject` and `updatedBy` email).
+- **Frontend (Dashboard.html):**
+  - "Next Step" hero card replaces dashboard top; KPI grid demoted below (kept for post-setup analytics).
+  - CTA pre-selects context (class/section/exam/subject) on the marks page.
+  - Auto-fill + lock subject dropdown on marks page for teachers (their assignment dictates).
+  - Teachers nav re-enabled for Wing Admin (Principal still hidden — read-only).
+  - Edit/Delete buttons in teachers list (wired to `updateTeacher`/`deleteTeacher`).
+  - Same modal serves Add + Edit (email field locked in edit mode).
+  - Role dropdown auto-hidden for Wing Admin in the modal (forced TEACHER).
+
 ### Feb 2026 — 4-Role System (Option B)
 - Added `Role` column to Teachers sheet: `ADMIN | PRINCIPAL | WING_ADMIN | TEACHER` (single source of truth for non-super-admin roles).
 - New helpers in `3_Auth.gs`: `getRole()`, `isPrincipal()`, `isWingAdmin()`, `canWrite(action)`, `canRead()`, `getWingForClass()`, `getClassesForWing()`, `getWingAdminAssignment()`.
